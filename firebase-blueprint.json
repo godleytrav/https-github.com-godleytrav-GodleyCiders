@@ -1,0 +1,90 @@
+{
+  "entities": {
+    "ClubLead": {
+      "title": "ClubLead",
+      "description": "User inquiring to join a membership tier",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "tier": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "email", "phone", "tier", "createdAt"]
+    },
+    "WholesaleInquiry": {
+      "title": "WholesaleInquiry",
+      "description": "Business inquiring about wholesale allocation",
+      "type": "object",
+      "properties": {
+        "businessName": { "type": "string" },
+        "contactName": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "message": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["businessName", "contactName", "email", "phone", "createdAt"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "A cider product available for sale, synced from Custom Program",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "price": { "type": "number" },
+        "stock": { "type": "number", "description": "Inventory synced from Custom Program" },
+        "isAvailable": { "type": "boolean" },
+        "imageUrl": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "price", "stock", "isAvailable", "updatedAt"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "An order created from the web, to be ingested by the Custom Program",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "items": { 
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "productId": { "type": "string" },
+              "quantity": { "type": "number" },
+              "priceAtPurchase": { "type": "number" }
+            },
+            "required": ["productId", "quantity", "priceAtPurchase"]
+          }
+        },
+        "totalAmount": { "type": "number" },
+        "status": { "enum": ["pending", "paid", "fulfilled", "cancelled"] },
+        "stripeSessionId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "items", "totalAmount", "status", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/club_leads/{leadId}": {
+      "schema": { "$ref": "#/entities/ClubLead" },
+      "description": "Inquiries for club membership."
+    },
+    "/wholesale_inquiries/{inquiryId}": {
+      "schema": { "$ref": "#/entities/WholesaleInquiry" },
+      "description": "Inquiries from businesses for wholesale allocation."
+    },
+    "/products/{productId}": {
+      "schema": { "$ref": "#/entities/Product" },
+      "description": "Cider inventory sourced from local CRM"
+    },
+    "/orders/{orderId}": {
+      "schema": { "$ref": "#/entities/Order" },
+      "description": "Orders created on the web to be processed by CRM"
+    }
+  }
+}

@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <!-- Apple Touch & Home Screen Background -->
+  <rect width="512" height="512" rx="112" fill="#0c0a09" />
+  
+  <!-- Subtle Amber Radial Glow -->
+  <circle cx="256" cy="270" r="160" fill="url(#amberGlow)" opacity="0.15" />
+
+  <!-- Gradients -->
+  <defs>
+    <radialGradient id="amberGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#f59e0b" />
+      <stop offset="100%" stop-color="#0c0a09" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="goldGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fbbf24" />
+      <stop offset="50%" stop-color="#f59e0b" />
+      <stop offset="100%" stop-color="#b45309" />
+    </linearGradient>
+    <linearGradient id="leafGradient" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#f59e0b" />
+      <stop offset="100%" stop-color="#34d399" />
+    </linearGradient>
+  </defs>
+
+  <!-- Graphic Elements: Elegant Styled Apple & Spark Ring -->
+  <g transform="translate(0, 15)">
+    <!-- Decorative Ambient Dots (Sparkling Cider bubbles) -->
+    <circle cx="256" cy="140" r="4" fill="#fbbf24" opacity="0.8" />
+    <circle cx="186" cy="220" r="5" fill="#f59e0b" opacity="0.6" />
+    <circle cx="326" cy="220" r="3" fill="#fbbf24" opacity="0.5" />
+    <circle cx="216" cy="340" r="4" fill="#b45309" opacity="0.4" />
+    <circle cx="296" cy="330" r="5" fill="#fbbf24" opacity="0.7" />
+    <circle cx="160" cy="290" r="3" fill="#f59e0b" opacity="0.5" />
+    <circle cx="350" cy="285" r="4" fill="#fbbf24" opacity="0.6" />
+
+    <!-- Stylized Leaf -->
+    <path d="M256,150 C256,110 300,90 320,100 C340,110 320,150 275,152 Z" fill="url(#leafGradient)" />
+    
+    <!-- Apple Stem -->
+    <path d="M256,170 Q262,140 270,120" stroke="url(#goldGradient)" stroke-width="8" stroke-linecap="round" fill="none" />
+    
+    <!-- Outer Apple Body (Left Half) -->
+    <path d="M256,175 C190,165 130,210 130,285 C130,360 190,410 256,395 C256,395 240,310 256,285" 
+          stroke="url(#goldGradient)" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.95" />
+
+    <!-- Outer Apple Body (Right Half) -->
+    <path d="M256,175 C322,165 382,210 382,285 C382,360 322,410 256,395 C256,395 272,310 256,285" 
+          stroke="url(#goldGradient)" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.95" />
+
+    <!-- Centered Sparkling Cider Droplet -->
+    <path d="M256,230 C235,265 235,295 256,315 C277,295 277,265 256,230 Z" fill="url(#goldGradient)" />
+
+    <!-- Inner Radial Core Rays (representing the specimen detail/seed pockets) -->
+    <path d="M226,285 Q210,285 200,280" stroke="#f59e0b" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.5" />
+    <path d="M286,285 Q302,285 312,280" stroke="#f59e0b" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.5" />
+  </g>
+  
+  <!-- Subtle Modern Border Frame -->
+  <rect x="15" y="15" width="482" height="482" rx="97" fill="none" stroke="#f59e0b" stroke-width="2" stroke-opacity="0.15" />
+</svg>

@@ -1,0 +1,1 @@
+import { glob } from "glob"; const files = glob.sync("public/assets/Enter Eden Splash/*.*"); console.log(files);

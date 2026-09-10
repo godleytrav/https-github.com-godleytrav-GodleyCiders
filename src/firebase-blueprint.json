@@ -1,0 +1,18 @@
+{
+  "entities": {
+    "AdminSettings": {
+      "title": "Admin Settings",
+      "description": "Global settings for the application.",
+      "type": "object",
+      "properties": {}
+    }
+  },
+  "firestore": {
+    "/admin_settings/{settingId}": {
+      "schema": {
+        "$ref": "#/entities/AdminSettings"
+      },
+      "description": "Global application configuration documents"
+    }
+  }
+}
