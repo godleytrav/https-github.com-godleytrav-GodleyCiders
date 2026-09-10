@@ -124,6 +124,26 @@ export default function ShopReservationsList() {
                             settledAt: serverTimestamp()
                           });
 
+                          // Enqueue sync event to BevForge
+                          await fetch('/api/events/enqueue', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              eventId: crypto.randomUUID?.() || 'evt-' + Math.random().toString(36).substring(2, 10),
+                              eventType: 'reservation.settled_dispatched',
+                              createdAt: new Date().toISOString(),
+                              data: {
+                                reservationId: res.id,
+                                ticketNumber: res.ticketNumber,
+                                customerName: res.customerName,
+                                customerEmail: res.email,
+                                totalAmount: res.totalAmount,
+                                status: 'settled_dispatched',
+                                timestamp: new Date().toISOString()
+                              }
+                            })
+                          }).catch(err => console.warn('BevForge reservation settlement enqueue failed:', err));
+
                           // Notify customer via dispatch email API
                           const itemsStr = res.items?.map((item: any) => `${item.quantity}x ${item.name}`).join(', ') || 'Your Cider Reservation';
                           const textContent = `Hello ${res.customerName},\n\nWe have exciting news! Your priority standby reservation at Godley Ciders is now available for fulfillment.\n\nOur cellars have completed fermentation, checked local compliance limits, and hand-selected your allocation:\n${itemsStr}\n\nYour vaulted card ending in *${res.cardLast4 || '4242'} has been settled for the order total of $${Number(res.totalAmount || 0).toFixed(2)} via Electronic Funds Transfer (EFT) in complete alignment with California ABC rules.\n\nFulfillment Details:\n${res.deliveryPreference === 'shipping' ? `Ground Freight parcel dispatch is packing. Tracking code updates will be sent to this email.` : 'Your bottles are securely caged, hand-corked, and ready for complimentary pickup at our local Placer County host cellar location!'}\n\nThank you for backing Godley Ciders during our pre-release scaling!\n\nCheers,\nGodley Ciders Team`;
@@ -157,6 +177,25 @@ export default function ShopReservationsList() {
                             status: 'cancelled',
                             cancelledAt: serverTimestamp()
                           });
+
+                          // Enqueue sync event to BevForge
+                          await fetch('/api/events/enqueue', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              eventId: crypto.randomUUID?.() || 'evt-' + Math.random().toString(36).substring(2, 10),
+                              eventType: 'reservation.cancelled',
+                              createdAt: new Date().toISOString(),
+                              data: {
+                                reservationId: res.id,
+                                ticketNumber: res.ticketNumber,
+                                customerName: res.customerName,
+                                status: 'cancelled',
+                                timestamp: new Date().toISOString()
+                              }
+                            })
+                          }).catch(err => console.warn('BevForge reservation cancel enqueue failed:', err));
+
                           alert('Reservation cancelled and card released.');
                         } catch (err: any) {
                           alert(err.message);

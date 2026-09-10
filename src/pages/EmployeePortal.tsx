@@ -5,7 +5,7 @@ import {
   Wine, FileText, CreditCard, Plus, Minus, Trash2, 
   CheckCircle, RefreshCw, AlertCircle, ShieldCheck, 
   Layers, Send, Users, Lock, ChevronRight, ShoppingBag, 
-  User, Check, DollarSign, Archive, HelpCircle, HardDrive, Smartphone, Mail, QrCode
+  User, Check, DollarSign, Archive, HelpCircle, HardDrive, Smartphone, Mail, QrCode, Clock
 } from 'lucide-react';
 import { db, handleFirestoreError, OperationType, initAuth, googleSignInWorkspace, getAccessToken } from '../firebase';
 import { collection, query, orderBy, onSnapshot, doc, addDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
@@ -78,6 +78,8 @@ export default function EmployeePortal() {
   // Real-time collections state
   const [inquiries, setInquiries] = useState<any[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
+  const [reservations, setReservations] = useState<any[]>([]);
+  const [fulfillmentFilter, setFulfillmentFilter] = useState<'all' | 'orders' | 'preorders'>('all');
   const [clubLeads, setClubLeads] = useState<any[]>([]);
   const [syncEvents, setSyncEvents] = useState<any[]>([]);
   const [dbLoading, setDbLoading] = useState(true);
@@ -220,6 +222,7 @@ export default function EmployeePortal() {
     let unsubInquiries = () => {};
     let unsubOrders = () => {};
     let unsubClubLeads = () => {};
+    let unsubReservations = () => {};
 
     try {
       const qInquiries = query(collection(db, 'wholesale_inquiries'), orderBy('createdAt', 'desc'));
@@ -242,6 +245,13 @@ export default function EmployeePortal() {
       }, (err) => {
         console.warn("Club leads Firestore load error (will fallback to local):", err);
       });
+
+      const qReservations = query(collection(db, 'shop_reservations'), orderBy('createdAt', 'desc'));
+      unsubReservations = onSnapshot(qReservations, (snapshot) => {
+        setReservations(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      }, (err) => {
+        console.warn("Shop reservations Firestore load error:", err);
+      });
     } catch (e) {
       console.warn("Firestore subscription failed. Falling back to robust offline state managers.");
     } finally {
@@ -252,6 +262,7 @@ export default function EmployeePortal() {
       unsubInquiries();
       unsubOrders();
       unsubClubLeads();
+      unsubReservations();
     };
   }, [isAuthenticated]);
 
@@ -867,6 +878,63 @@ export default function EmployeePortal() {
       fetchCurrentSyncQueue();
     } catch (err) {
       console.error("Failed to update status & enqueue event:", err);
+    }
+  };
+
+  // Update shop reservation status & enqueue event to BevForge
+  const updateReservationStatus = async (reservationId: string, newStatus: string) => {
+    try {
+      const res = reservations.find(r => r.id === reservationId);
+      const docRef = doc(db, 'shop_reservations', reservationId);
+      await updateDoc(docRef, {
+        status: newStatus,
+        updatedAt: serverTimestamp(),
+        ...(newStatus === 'settled_dispatched' ? { settledAt: serverTimestamp() } : {}),
+        ...(newStatus === 'cancelled' ? { cancelledAt: serverTimestamp() } : {})
+      });
+
+      // Enqueue sync event to let BevForge know pre-order status was altered!
+      const statusEvent: WebhookEvent<any> = {
+        eventId: crypto.randomUUID?.() || 'evt-' + Math.random().toString(36).substring(2, 10),
+        eventType: `reservation.${newStatus}`,
+        createdAt: new Date().toISOString(),
+        data: {
+          reservationId,
+          ticketNumber: res?.ticketNumber || 'UNKNOWN',
+          customerName: res?.customerName || 'Customer',
+          customerEmail: res?.email || '',
+          totalAmount: res?.totalAmount || 0,
+          status: newStatus,
+          timestamp: new Date().toISOString()
+        }
+      };
+
+      await fetch('/api/events/enqueue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(statusEvent)
+      });
+
+      // If settled, dispatch email notification
+      if (newStatus === 'settled_dispatched' && res?.email) {
+        const itemsStr = res.items?.map((item: any) => `${item.quantity}x ${item.name}`).join(', ') || 'Your Cider Reservation';
+        const textContent = `Hello ${res.customerName},\n\nWe have exciting news! Your priority standby reservation at Godley Ciders is now available for fulfillment.\n\nOur cellars have completed fermentation, checked local compliance limits, and hand-selected your allocation:\n${itemsStr}\n\nYour vaulted card ending in *${res.cardLast4 || '4242'} has been settled for the order total of $${Number(res.totalAmount || 0).toFixed(2)} via Electronic Funds Transfer (EFT) in complete alignment with California ABC rules.\n\nFulfillment Details:\n${res.deliveryPreference === 'shipping' ? 'Ground Freight parcel dispatch is packing. Tracking code updates will be sent to this email.' : 'Your bottles are securely caged, hand-corked, and ready for complimentary pickup at our local Placer County host cellar location!'}\n\nThank you for backing Godley Ciders during our pre-release scaling!\n\nCheers,\nGodley Ciders Team`;
+
+        await fetch('/api/email/dispatch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: res.email,
+            subject: '🎉 Godley Ciders - Priority Allocation Ready!',
+            text: textContent,
+            from: 'billing@godleyciders.com'
+          })
+        }).catch(err => console.warn('Email dispatch failed:', err));
+      }
+
+      fetchCurrentSyncQueue();
+    } catch (err) {
+      console.error("Failed to update reservation status & enqueue event:", err);
     }
   };
 
@@ -2082,122 +2150,327 @@ export default function EmployeePortal() {
             {/* Orders Row */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
               
-              {/* Order Fulfillments panel (Cols 7) */}
+              {/* Order Fulfillments & Pre-Orders panel (Cols 8) */}
               <div className="lg:col-span-8 space-y-4">
-                <div className="flex items-center justify-between border-b border-stone-850 pb-2 mb-4">
-                  <h3 className="text-stone-200 uppercase tracking-widest text-sm font-serif flex items-center gap-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-stone-850 pb-3 mb-4 gap-3">
+                  <div className="flex items-center gap-2">
                     <Wine size={16} className="text-amber-500" />
-                    Shed Order Fullfilment Queue
-                  </h3>
-                  <span className="text-[10px] font-mono text-stone-500">{combinedOrders.length} system orders loaded</span>
+                    <h3 className="text-stone-200 uppercase tracking-widest text-sm font-serif">
+                      Operations Fulfillment Hub
+                    </h3>
+                  </div>
+                  
+                  {/* Filter Sub-nav: All, Shed Orders, Pre-Orders Standby */}
+                  <div className="flex items-center gap-1 bg-stone-900/70 p-1 rounded border border-stone-800 text-[11px] font-mono">
+                    <button
+                      onClick={() => setFulfillmentFilter('all')}
+                      className={`px-2.5 py-1 rounded transition-colors ${
+                        fulfillmentFilter === 'all'
+                          ? 'bg-amber-600 text-stone-950 font-bold'
+                          : 'text-stone-400 hover:text-stone-200'
+                      }`}
+                    >
+                      All ({combinedOrders.length + reservations.length})
+                    </button>
+                    <button
+                      onClick={() => setFulfillmentFilter('orders')}
+                      className={`px-2.5 py-1 rounded transition-colors ${
+                        fulfillmentFilter === 'orders'
+                          ? 'bg-amber-600 text-stone-950 font-bold'
+                          : 'text-stone-400 hover:text-stone-200'
+                      }`}
+                    >
+                      Shed Orders ({combinedOrders.length})
+                    </button>
+                    <button
+                      onClick={() => setFulfillmentFilter('preorders')}
+                      className={`px-2.5 py-1 rounded transition-colors flex items-center gap-1.5 ${
+                        fulfillmentFilter === 'preorders'
+                          ? 'bg-amber-600 text-stone-950 font-bold'
+                          : 'text-stone-400 hover:text-stone-200'
+                      }`}
+                    >
+                      <Clock size={12} />
+                      Pre-Orders Standby ({reservations.length})
+                    </button>
+                  </div>
                 </div>
 
-                {combinedOrders.length === 0 ? (
-                  <div className="py-12 border border-stone-800 bg-stone-950/20 text-center rounded text-stone-500 text-xs italic">
-                    No active cider orders found in system.
-                  </div>
-                ) : (
-                  <div className="space-y-3.5 max-h-[600px] overflow-y-auto pr-2">
-                    {combinedOrders.map((order) => (
-                      <div key={order.id || order.orderId} className="bg-stone-950/50 border border-stone-800 p-4 rounded text-xs flex flex-col md:flex-row justify-between gap-4">
-                        <div className="space-y-2 flex-1 min-w-0">
-                          <div className="flex items-center gap-3 flex-wrap">
-                            <span className="font-mono text-xs text-amber-500 font-bold">ORD-{order.id?.slice(0, 8).toUpperCase() || order.orderId}</span>
-                            <span className={`text-[9px] uppercase tracking-wider px-2 py-0.5 rounded-full border ${
-                              order.status === 'fulfilled' 
-                                ? 'bg-emerald-950/50 text-emerald-400 border-emerald-900/40' 
-                                : order.status === 'paid'
-                                ? 'bg-blue-950/50 text-blue-400 border-blue-900/40'
-                                : 'bg-amber-951/50 text-amber-400 border-amber-900/40'
-                            }`}>
-                              {order.status}
-                            </span>
-                            <span className="font-mono text-stone-500 text-[10px]">{order.source || 'Online Store'}</span>
-                          </div>
+                {/* --- 1. PRE-ORDERS / STANDBY ALLOCATIONS SECTION --- */}
+                {(fulfillmentFilter === 'all' || fulfillmentFilter === 'preorders') && (
+                  <div className="space-y-3 mb-6">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Clock size={14} className="text-amber-400" />
+                        <span className="text-xs uppercase tracking-wider font-serif text-amber-300 font-bold">
+                          Cider Release Pre-Orders & Standby Queue
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-mono text-stone-400">
+                        {reservations.length} pre-orders active • Synced to BevForge
+                      </span>
+                    </div>
 
-                          {/* Customer & Address */}
-                          <div className="text-stone-400 space-y-1 font-sans">
-                            <p><span className="text-stone-600">Client:</span> <strong className="text-stone-200">{order.customerName || order.userId}</strong> ({order.customerEmail || order.userId})</p>
-                            {order.abcLicenseNumber && (
-                              <p className="text-[11px] text-amber-500/70 font-mono">ABC: {order.abcLicenseNumber} | Resale Certificate: {order.resaleLicenseNumber}</p>
-                            )}
-                          </div>
-
-                          {/* Product items list */}
-                          <div className="pt-2 border-t border-stone-900 mt-2">
-                            <p className="text-[10px] uppercase text-stone-500 tracking-wider font-serif mb-1.5">Line Items Sourced:</p>
-                            <div className="space-y-1 text-[11px] text-stone-300 pl-2 border-l border-stone-800">
-                              {order.items?.map((item: any, idx: number) => (
-                                <div key={idx} className="flex justify-between max-w-sm font-sans">
-                                  <span>{item.name} <span className="text-stone-500">x{item.quantity}</span></span>
-                                  <span className="font-mono text-stone-400">${(item.priceAtPurchase || item.unitPriceCents / 100 || 0).toFixed(2)}</span>
+                    {reservations.length === 0 ? (
+                      <div className="py-8 border border-stone-800/80 bg-stone-950/30 text-center rounded text-stone-500 text-xs italic">
+                        No active cider pre-orders or standby allocations in queue.
+                      </div>
+                    ) : (
+                      <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
+                        {reservations.map((res) => {
+                          const itemsCount = res.items?.reduce((sum: number, i: any) => sum + (i.quantity || 1), 0) || 0;
+                          return (
+                            <div 
+                              key={res.id} 
+                              className="bg-stone-950/70 border border-stone-800 hover:border-stone-700 p-4 rounded text-xs flex flex-col md:flex-row justify-between gap-4 transition-all"
+                            >
+                              <div className="space-y-2.5 flex-1 min-w-0">
+                                <div className="flex items-center gap-3 flex-wrap">
+                                  <span className="font-mono text-xs text-amber-400 font-bold">
+                                    #GOD-{res.ticketNumber || 'PRE'}
+                                  </span>
+                                  <span className={`text-[9px] uppercase tracking-wider px-2 py-0.5 rounded-full border ${
+                                    res.status === 'settled_dispatched'
+                                      ? 'bg-emerald-950/60 text-emerald-400 border-emerald-800/50'
+                                      : res.status === 'cancelled'
+                                      ? 'bg-red-950/60 text-red-400 border-red-800/50'
+                                      : 'bg-amber-950/60 text-amber-300 border-amber-800/50'
+                                  }`}>
+                                    {res.status === 'settled_dispatched' 
+                                      ? 'Settled & Dispatched' 
+                                      : res.status === 'cancelled' 
+                                      ? 'Cancelled' 
+                                      : 'Standby Queue (Vaulted)'}
+                                  </span>
+                                  <span className="font-mono text-stone-400 text-[10px] flex items-center gap-1 bg-stone-900/90 px-2 py-0.5 rounded border border-stone-800">
+                                    <Layers size={10} className="text-amber-500" />
+                                    BevForge Event Synced
+                                  </span>
                                 </div>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
 
-                        {/* Action buttons (Fulfill status updates) */}
-                        <div className="flex flex-col justify-between items-end gap-3 flex-shrink-0">
-                          <div className="text-right">
-                            <span className="font-mono text-sm block font-bold text-stone-100">${(order.totalAmount || order.totalCents / 100 || 0).toFixed(2)}</span>
-                            <span className="text-[9px] text-stone-500 font-sans">{order.paymentMethod ? `via ${order.paymentMethod.toUpperCase()}` : 'Stripe Hook'}</span>
-                          </div>
+                                {/* Customer Details */}
+                                <div className="text-stone-400 space-y-1 font-sans">
+                                  <p>
+                                    <span className="text-stone-500">Client:</span>{' '}
+                                    <strong className="text-stone-100">{res.customerName}</strong>
+                                    {res.email && <span className="text-stone-400"> ({res.email})</span>}
+                                    {res.phone && <span className="text-stone-400 font-mono text-[11px]"> • {res.phone}</span>}
+                                  </p>
+                                  <p className="text-[11px] text-stone-400">
+                                    <span className="text-stone-500">Fulfillment:</span>{' '}
+                                    {res.deliveryPreference === 'shipping' ? (
+                                      <span className="text-amber-400/90">
+                                        🚚 CA Ground Freight ({res.street ? `${res.street}, ${res.city}, ${res.state} ${res.zip}` : 'California Address'})
+                                      </span>
+                                    ) : (
+                                      <span className="text-emerald-400/90">
+                                        🍇 Complimentary Placer County Cellar Pickup
+                                      </span>
+                                    )}
+                                  </p>
+                                  <p className="text-[11px] font-mono text-stone-400">
+                                    <span className="text-stone-500">Payment Vault:</span> EFT Pre-auth *{res.cardLast4 || '4242'} (CA AB 2991 hold $0.00)
+                                  </p>
+                                </div>
 
-                          {/* Stat controllers */}
-                          <div className="flex flex-col gap-2 items-end w-full">
-                            <div className="flex gap-2 font-serif">
-                              {order.status !== 'fulfilled' && (
-                                <button 
-                                  onClick={() => updateOrderStatus(order.id, 'fulfilled')}
-                                  className="px-3 py-1 bg-emerald-700 hover:bg-emerald-600 text-stone-950 rounded-sm font-serif font-bold text-[10px] uppercase tracking-wider"
-                                >
-                                  Fulfill order
-                                </button>
-                              )}
-                              {order.status !== 'cancelled' && (
-                                <button 
-                                  onClick={() => updateOrderStatus(order.id, 'cancelled')}
-                                  className="px-3 py-1 border border-stone-800 hover:bg-red-955/20 text-stone-400 hover:text-red-400 rounded-sm font-serif text-[10px] uppercase tracking-wider"
-                                >
-                                  Cancel
-                                </button>
-                              )}
-                            </div>
-
-                            {/* Wholesale Credit/Invoice Override controls */}
-                            {order.source === 'wholesale' && (
-                              <div className="flex flex-col gap-1 w-full max-w-[200px] bg-stone-900/40 p-2 border border-stone-850 rounded text-right">
-                                <span className="text-[8px] tracking-wider text-stone-500 uppercase font-bold font-sans">NET-30 Payment Term Status:</span>
-                                <div className="flex gap-1.5 mt-1 justify-end">
-                                  <button
-                                    onClick={() => updateOrderStatus(order.id, 'paid')}
-                                    disabled={order.status === 'paid'}
-                                    className="text-[8px] uppercase tracking-wider px-1.5 py-0.5 rounded border border-emerald-950/40 text-emerald-400 hover:bg-emerald-600 hover:text-stone-950 bg-emerald-600/10 font-bold transition-all disabled:opacity-30 cursor-pointer text-center flex-1 font-mono"
-                                  >
-                                    Paid
-                                  </button>
-                                  <button
-                                    onClick={() => updateOrderStatus(order.id, 'unpaid')}
-                                    disabled={order.status === 'unpaid'}
-                                    className="text-[8px] uppercase tracking-wider px-1.5 py-0.5 rounded border border-amber-950/40 text-amber-400 hover:bg-amber-600 hover:text-stone-950 bg-amber-600/10 font-bold transition-all disabled:opacity-30 cursor-pointer text-center flex-1 font-mono"
-                                  >
-                                    Unpaid
-                                  </button>
-                                  <button
-                                    onClick={() => updateOrderStatus(order.id, 'overdue')}
-                                    disabled={order.status === 'overdue'}
-                                    className="text-[8.5px] uppercase tracking-widest px-1.5 py-0.5 rounded border border-red-950/40 text-red-400 hover:bg-red-600 hover:text-stone-950 bg-red-600/10 font-bold transition-all disabled:opacity-30 cursor-pointer text-center flex-1 animate-pulse font-mono"
-                                  >
-                                    Overdue
-                                  </button>
+                                {/* Allocated Line items */}
+                                <div className="pt-2 border-t border-stone-900 mt-2">
+                                  <p className="text-[10px] uppercase text-stone-500 tracking-wider font-serif mb-1.5 flex items-center justify-between">
+                                    <span>Allocated Items ({itemsCount}):</span>
+                                  </p>
+                                  <div className="space-y-1 text-[11px] text-stone-300 pl-2 border-l border-stone-800">
+                                    {res.items?.map((item: any, idx: number) => (
+                                      <div key={idx} className="flex justify-between max-w-md font-sans">
+                                        <span>
+                                          {item.name} <span className="text-stone-500">[{item.type || 'Bottle'}] x{item.quantity}</span>
+                                        </span>
+                                        <span className="font-mono text-stone-400">
+                                          ${((item.price || 0) * (item.quantity || 1)).toFixed(2)}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
                                 </div>
                               </div>
-                            )}
-                          </div>
-                        </div>
+
+                              {/* Right column: Financials & Action Buttons */}
+                              <div className="flex flex-col justify-between items-end gap-3 flex-shrink-0 min-w-[160px]">
+                                <div className="text-right">
+                                  <span className="font-mono text-base block font-bold text-amber-400">
+                                    ${(res.totalAmount || 0).toFixed(2)}
+                                  </span>
+                                  <span className="text-[10px] text-stone-400 font-sans">
+                                    {res.deliveryPreference === 'shipping' ? 'Incl. $12 CA Shipping' : 'Complimentary Pickup'}
+                                  </span>
+                                </div>
+
+                                {/* Action buttons */}
+                                <div className="flex flex-col gap-2 items-end w-full">
+                                  {res.status === 'reserved' && (
+                                    <div className="flex flex-col gap-1.5 w-full">
+                                      <button 
+                                        onClick={() => {
+                                          if (window.confirm(`Settle vaulted card (*${res.cardLast4 || '4242'}) for $${(res.totalAmount || 0).toFixed(2)} and dispatch allocation confirmation to ${res.customerName}?`)) {
+                                            updateReservationStatus(res.id, 'settled_dispatched');
+                                          }
+                                        }}
+                                        className="w-full py-1.5 px-2.5 bg-emerald-600 hover:bg-emerald-500 text-stone-950 font-serif font-bold text-[10px] uppercase tracking-wider rounded transition-colors shadow-sm text-center"
+                                      >
+                                        Settle & Dispatch
+                                      </button>
+                                      <button 
+                                        onClick={() => {
+                                          if (window.confirm(`Cancel pre-order #GOD-${res.ticketNumber} and release vaulted card hold?`)) {
+                                            updateReservationStatus(res.id, 'cancelled');
+                                          }
+                                        }}
+                                        className="w-full py-1 px-2 border border-stone-800 hover:border-red-900/60 hover:bg-red-950/20 text-stone-400 hover:text-red-400 font-serif text-[10px] uppercase tracking-wider rounded transition-colors text-center"
+                                      >
+                                        Cancel Pre-Order
+                                      </button>
+                                    </div>
+                                  )}
+
+                                  {res.status !== 'reserved' && (
+                                    <span className="text-[10px] font-mono text-stone-400 italic">
+                                      {res.status === 'settled_dispatched' ? 'Fulfillment Completed' : 'Order Cancelled'}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
-                    ))}
+                    )}
+                  </div>
+                )}
+
+                {/* --- 2. COMMERCIAL & SHED ORDERS SECTION --- */}
+                {(fulfillmentFilter === 'all' || fulfillmentFilter === 'orders') && (
+                  <div className="space-y-3">
+                    {fulfillmentFilter === 'all' && (
+                      <div className="flex items-center justify-between pt-2 border-t border-stone-850">
+                        <div className="flex items-center gap-2">
+                          <Wine size={14} className="text-amber-500" />
+                          <span className="text-xs uppercase tracking-wider font-serif text-stone-300 font-bold">
+                            Commercial & Shed Orders
+                          </span>
+                        </div>
+                        <span className="text-[10px] font-mono text-stone-500">
+                          {combinedOrders.length} orders
+                        </span>
+                      </div>
+                    )}
+
+                    {combinedOrders.length === 0 ? (
+                      <div className="py-12 border border-stone-800 bg-stone-950/20 text-center rounded text-stone-500 text-xs italic">
+                        No active cider orders found in system.
+                      </div>
+                    ) : (
+                      <div className="space-y-3.5 max-h-[600px] overflow-y-auto pr-2">
+                        {combinedOrders.map((order) => (
+                          <div key={order.id || order.orderId} className="bg-stone-950/50 border border-stone-800 p-4 rounded text-xs flex flex-col md:flex-row justify-between gap-4">
+                            <div className="space-y-2 flex-1 min-w-0">
+                              <div className="flex items-center gap-3 flex-wrap">
+                                <span className="font-mono text-xs text-amber-500 font-bold">ORD-{order.id?.slice(0, 8).toUpperCase() || order.orderId}</span>
+                                <span className={`text-[9px] uppercase tracking-wider px-2 py-0.5 rounded-full border ${
+                                  order.status === 'fulfilled' 
+                                    ? 'bg-emerald-950/50 text-emerald-400 border-emerald-900/40' 
+                                    : order.status === 'paid'
+                                    ? 'bg-blue-950/50 text-blue-400 border-blue-900/40'
+                                    : 'bg-amber-951/50 text-amber-400 border-amber-900/40'
+                                }`}>
+                                  {order.status}
+                                </span>
+                                <span className="font-mono text-stone-500 text-[10px]">{order.source || 'Online Store'}</span>
+                              </div>
+
+                              {/* Customer & Address */}
+                              <div className="text-stone-400 space-y-1 font-sans">
+                                <p><span className="text-stone-600">Client:</span> <strong className="text-stone-200">{order.customerName || order.userId}</strong> ({order.customerEmail || order.userId})</p>
+                                {order.abcLicenseNumber && (
+                                  <p className="text-[11px] text-amber-500/70 font-mono">ABC: {order.abcLicenseNumber} | Resale Certificate: {order.resaleLicenseNumber}</p>
+                                )}
+                              </div>
+
+                              {/* Product items list */}
+                              <div className="pt-2 border-t border-stone-900 mt-2">
+                                <p className="text-[10px] uppercase text-stone-500 tracking-wider font-serif mb-1.5">Line Items Sourced:</p>
+                                <div className="space-y-1 text-[11px] text-stone-300 pl-2 border-l border-stone-800">
+                                  {order.items?.map((item: any, idx: number) => (
+                                    <div key={idx} className="flex justify-between max-w-sm font-sans">
+                                      <span>{item.name} <span className="text-stone-500">x{item.quantity}</span></span>
+                                      <span className="font-mono text-stone-400">${(item.priceAtPurchase || item.unitPriceCents / 100 || 0).toFixed(2)}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Action buttons (Fulfill status updates) */}
+                            <div className="flex flex-col justify-between items-end gap-3 flex-shrink-0">
+                              <div className="text-right">
+                                <span className="font-mono text-sm block font-bold text-stone-100">${(order.totalAmount || order.totalCents / 100 || 0).toFixed(2)}</span>
+                                <span className="text-[9px] text-stone-500 font-sans">{order.paymentMethod ? `via ${order.paymentMethod.toUpperCase()}` : 'Stripe Hook'}</span>
+                              </div>
+
+                              {/* Stat controllers */}
+                              <div className="flex flex-col gap-2 items-end w-full">
+                                <div className="flex gap-2 font-serif">
+                                  {order.status !== 'fulfilled' && (
+                                    <button 
+                                      onClick={() => updateOrderStatus(order.id, 'fulfilled')}
+                                      className="px-3 py-1 bg-emerald-700 hover:bg-emerald-600 text-stone-950 rounded-sm font-serif font-bold text-[10px] uppercase tracking-wider"
+                                    >
+                                      Fulfill order
+                                    </button>
+                                  )}
+                                  {order.status !== 'cancelled' && (
+                                    <button 
+                                      onClick={() => updateOrderStatus(order.id, 'cancelled')}
+                                      className="px-3 py-1 border border-stone-800 hover:bg-red-955/20 text-stone-400 hover:text-red-400 rounded-sm font-serif text-[10px] uppercase tracking-wider"
+                                    >
+                                      Cancel
+                                    </button>
+                                  )}
+                                </div>
+
+                                {/* Wholesale Credit/Invoice Override controls */}
+                                {order.source === 'wholesale' && (
+                                  <div className="flex flex-col gap-1 w-full max-w-[200px] bg-stone-900/40 p-2 border border-stone-850 rounded text-right">
+                                    <span className="text-[8px] tracking-wider text-stone-500 uppercase font-bold font-sans">NET-30 Payment Term Status:</span>
+                                    <div className="flex gap-1.5 mt-1 justify-end">
+                                      <button
+                                        onClick={() => updateOrderStatus(order.id, 'paid')}
+                                        disabled={order.status === 'paid'}
+                                        className="text-[8px] uppercase tracking-wider px-1.5 py-0.5 rounded border border-emerald-950/40 text-emerald-400 hover:bg-emerald-600 hover:text-stone-950 bg-emerald-600/10 font-bold transition-all disabled:opacity-30 cursor-pointer text-center flex-1 font-mono"
+                                      >
+                                        Paid
+                                      </button>
+                                      <button
+                                        onClick={() => updateOrderStatus(order.id, 'unpaid')}
+                                        disabled={order.status === 'unpaid'}
+                                        className="text-[8px] uppercase tracking-wider px-1.5 py-0.5 rounded border border-amber-950/40 text-amber-400 hover:bg-amber-600 hover:text-stone-950 bg-amber-600/10 font-bold transition-all disabled:opacity-30 cursor-pointer text-center flex-1 font-mono"
+                                      >
+                                        Unpaid
+                                      </button>
+                                      <button
+                                        onClick={() => updateOrderStatus(order.id, 'overdue')}
+                                        disabled={order.status === 'overdue'}
+                                        className="text-[8.5px] uppercase tracking-widest px-1.5 py-0.5 rounded border border-red-950/40 text-red-400 hover:bg-red-600 hover:text-stone-950 bg-red-600/10 font-bold transition-all disabled:opacity-30 cursor-pointer text-center flex-1 animate-pulse font-mono"
+                                      >
+                                        Overdue
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

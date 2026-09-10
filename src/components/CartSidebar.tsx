@@ -139,7 +139,43 @@ export default function CartSidebar() {
       };
 
       // 1. Write Priority STANDBY Reservation to Firestore
-      await addDoc(collection(db, 'shop_reservations'), reservationPayload);
+      const resDocRef = await addDoc(collection(db, 'shop_reservations'), reservationPayload);
+
+      // 2. Enqueue sync event to BevForge live outbox queue
+      await fetch('/api/events/enqueue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          eventId: crypto.randomUUID?.() || 'evt-' + Math.random().toString(36).substring(2, 10),
+          eventType: 'reservation.created',
+          createdAt: new Date().toISOString(),
+          data: {
+            reservationId: resDocRef.id,
+            ticketNumber: randomTicketNum,
+            customerName: formData.name,
+            customerEmail: formData.email,
+            phone: formData.phone,
+            deliveryPreference: formData.deliveryPreference,
+            street: formData.street,
+            city: formData.city,
+            state: formData.state,
+            zip: formData.zip,
+            items: items.map(i => ({
+              productId: i.id,
+              name: i.name,
+              quantity: i.quantity,
+              price: i.price,
+              type: i.type
+            })),
+            subtotal: total,
+            shippingFee: shippingFee,
+            totalAmount: grandTotal,
+            cardLast4: last4,
+            status: 'reserved',
+            timestamp: new Date().toISOString()
+          }
+        })
+      }).catch(err => console.warn('BevForge preorder sync enqueue skipped:', err));
 
       // 2. Format Items descriptive list for email dispatch
       const itemsListText = items.map(i => `• ${i.quantity}x ${i.name} [${i.type}] — $${(i.price * i.quantity).toFixed(2)}`).join('\n');

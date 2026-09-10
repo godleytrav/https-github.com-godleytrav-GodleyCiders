@@ -136,7 +136,10 @@ async function sendSystemEmail({
 
 async function startServer() {
   const app = express();
-  const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
+  const PORT = 3000;
+
+  // Integration API: Outbound Synchronization Queue for Local App
+  let syncQueue: any[] = [];
 
   // Middleware to parse JSON bodies
   app.use(express.json());
@@ -630,10 +633,6 @@ async function startServer() {
   });
 
   // Integration API: Outbound Synchronization Queue for Local App
-  // Since the local app might lose internet connection, we can queue updates
-  // here (e.g., in memory or Firebase) and the local app can periodically GET this endpoint.
-  let syncQueue: any[] = []; // In a real app, use Firestore or a DB
-
   // Endpoint for the Web App frontend or external services (like Stripe webhooks) to submit events
   app.post("/api/events/enqueue", async (req, res) => {
     try {
