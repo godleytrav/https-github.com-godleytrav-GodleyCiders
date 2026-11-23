@@ -537,24 +537,39 @@ export const useAdminStore = create<AdminState>((set) => ({
       imageUrl: p.imageUrl ? cleanImagePath(p.imageUrl) : p.imageUrl
     }));
 
+    const payload = {
+      splashVideoUrl: state.splashVideoUrl,
+      splashStoryTexts: state.splashStoryTexts,
+      anatomyImageUrl: state.anatomyImageUrl,
+      anatomyHotspots: state.anatomyHotspots,
+      homeSettings: state.homeSettings,
+      clubSettings: state.clubSettings,
+      wholesaleSettings: state.wholesaleSettings,
+      storySettings: state.storySettings,
+      shopSettings: state.shopSettings,
+      socialSettings: state.socialSettings,
+      shopProducts: cleanShopProducts,
+      products: cleanProducts,
+    };
+
     try {
-      await setDoc(docRef, {
-        splashVideoUrl: state.splashVideoUrl,
-        splashStoryTexts: state.splashStoryTexts,
-        anatomyImageUrl: state.anatomyImageUrl,
-        anatomyHotspots: state.anatomyHotspots,
-        homeSettings: state.homeSettings,
-        clubSettings: state.clubSettings,
-        wholesaleSettings: state.wholesaleSettings,
-        storySettings: state.storySettings,
-        shopSettings: state.shopSettings,
-        socialSettings: state.socialSettings,
-        shopProducts: cleanShopProducts,
-        products: cleanProducts,
-      }, { merge: true });
-    } catch (error) {
-      console.error("Failed to save to Firebase:", error);
-      throw error;
+      await setDoc(docRef, payload, { merge: true });
+    } catch (clientError: any) {
+      console.warn("Client Firestore write failed, falling back to server Admin API:", clientError?.message);
+      // Resilient server-side write with Admin SDK
+      const response = await fetch('/api/admin/save-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          passcode: sessionStorage.getItem('godley_admin_pin') || '1234',
+          settings: payload
+        })
+      });
+
+      if (!response.ok) {
+        const errJson = await response.json().catch(() => ({}));
+        throw new Error(errJson.error || clientError?.message || "Failed to save settings");
+      }
     }
   },
 

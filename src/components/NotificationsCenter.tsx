@@ -343,7 +343,7 @@ export default function NotificationsCenter() {
                       {n.cardLast4 && (
                         <div>
                           <span className="text-[9px] text-stone-500 block uppercase font-bold">Vaulted Card:</span>
-                          <span className="text-amber-400 font-bold">💳 *{n.cardLast4} (Hold $0.00)</span>
+                          <span className="text-amber-400 font-bold">Card: *{n.cardLast4} (Hold $0.00)</span>
                         </div>
                       )}
                       {n.tier && (
@@ -424,7 +424,7 @@ export default function NotificationsCenter() {
                           ? 'bg-red-950/60 text-red-400 border-red-500/30'
                           : 'bg-amber-950/40 text-amber-400 border-amber-500/20'
                       }`}>
-                        {log.status === 'delivered' ? '✓ Delivered' : log.status === 'failed' ? '✗ Failed' : '● Logged (Simulated)'}
+                        {log.status === 'delivered' ? 'Delivered' : log.status === 'failed' ? 'Failed' : 'Logged (Simulated)'}
                       </span>
                       <span className="font-mono text-[10px] text-stone-500 uppercase">Provider: {log.provider}</span>
                       <span className="font-bold text-stone-200 truncate">{log.subject}</span>
@@ -583,7 +583,7 @@ export default function NotificationsCenter() {
                 onClick={() => setSelectedEmail(null)}
                 className="text-stone-400 hover:text-stone-100 text-xs font-bold cursor-pointer"
               >
-                ✕ Close
+                Close
               </button>
             </div>
 

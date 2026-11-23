@@ -1,6 +1,6 @@
 {
   "name": "Godely Ciders",
   "description": "Premium craft cidery website with interactive specimen viewer, club membership tiers, and wholesale inquiries.",
-  "requestFramePermissions": [],
+  "requestFramePermissions": ["camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

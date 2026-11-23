@@ -167,8 +167,8 @@ export default function ClubMembersList() {
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-stone-200 font-bold">{member.name}</span>
                     {member.vip && (
-                      <span className="text-[8px] bg-amber-500/10 text-amber-500 border border-amber-500/30 px-1 rounded uppercase font-bold tracking-widest leading-none py-[2px] font-sans">
-                        ★ VIP
+                      <span className="text-[8px] bg-amber-500/10 text-amber-500 border border-amber-500/30 px-1.5 rounded uppercase font-bold tracking-widest leading-none py-[2px] font-sans">
+                        VIP
                       </span>
                     )}
                   </div>

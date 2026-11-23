@@ -197,16 +197,16 @@ By preserving these orchards, we secure dry ciders that reflect ancient micro-te
   }
 ];
 
-// Emojis and text for fast, no-typing pairing bubbles
+// Fast, no-typing pairing bubbles
 const PAIRING_BUBBLES = [
-  { emoji: "🧀", label: "Sharp Cheddar" },
-  { emoji: "🐐", label: "Creamy Chèvre" },
-  { emoji: "🥩", label: "Roasted Pork" },
-  { emoji: "🍖", label: "Smoked BBQ" },
-  { emoji: "🌮", label: "Spicy Tacos" },
-  { emoji: "🥖", label: "Sourdough Bread" },
-  { emoji: "🥧", label: "Apple Fritters" },
-  { emoji: "🥓", label: "Candied Bacon" }
+  { label: "Sharp Cheddar" },
+  { label: "Creamy Chèvre" },
+  { label: "Roasted Pork" },
+  { label: "Smoked BBQ" },
+  { label: "Spicy Tacos" },
+  { label: "Sourdough Bread" },
+  { label: "Apple Fritters" },
+  { label: "Candied Bacon" }
 ];
 
 export default function Blog() {
@@ -256,7 +256,7 @@ export default function Blog() {
   const [likedCards, setLikedCards] = useState<{ [key: string]: boolean }>({});
   const [floatingHearts, setFloatingHearts] = useState<{ id: string; x: number; y: number; cardId: string }[]>([]);
 
-  // Projector Theatre Mode states (🎟️ Taproom Physical-to-Digital Bridge)
+  // Projector Theatre Mode states (Taproom Physical-to-Digital Bridge)
   const [projectorActive, setProjectorActive] = useState<boolean>(false);
   const [projectorIndex, setProjectorIndex] = useState<number>(0);
   const [projectorSpeed, setProjectorSpeed] = useState<number>(8000); // 8 seconds default
@@ -330,7 +330,7 @@ export default function Blog() {
     return unsub;
   }, [currentUser]);
 
-  // Auto-cycling loop for Projector mode slideshow (🎟️ Taproom Physical-to-Digital Bridge)
+  // Auto-cycling loop for Projector mode slideshow (Taproom Physical-to-Digital Bridge)
   useEffect(() => {
     if (!projectorActive || !projectorPlaying) return;
     
@@ -360,18 +360,18 @@ export default function Blog() {
 
   // Calculate sweetness label text dynamically
   const getSweetnessText = (val: number) => {
-    if (val <= 15) return "🍏 BONE DRY (Zesty, champagne residual weight)";
-    if (val <= 45) return "🍎 CRISP DRY (Refreshing, orchard skin finish)";
-    if (val <= 75) return "🍯 OFF-DRY (Perfect sweet fruit bloom)";
-    return "🐝 NECTAR SWEET (Indulgent wilderness honeycomb finish)";
+    if (val <= 15) return "BONE DRY (Zesty, champagne residual weight)";
+    if (val <= 45) return "CRISP DRY (Refreshing, orchard skin finish)";
+    if (val <= 75) return "OFF-DRY (Perfect sweet fruit bloom)";
+    return "NECTAR SWEET (Indulgent wilderness honeycomb finish)";
   };
 
   // Calculate crispness vs oaky funk label
   const getCharacterText = (val: number) => {
-    if (val <= 20) return "⚡ RAZOR CRISP (Pure stainless, cool air finish)";
-    if (val <= 50) return "🍎 BALANCED SIPPABLE (Clean vintage wood notes)";
-    if (val <= 80) return "🪵 OAK BRIGHT (Neutral cask tannins, subtle forest nose)";
-    return "🐐 HISTORIC FUNK (Indigenous wild yeasts, clay floor depth)";
+    if (val <= 20) return "RAZOR CRISP (Pure stainless, cool air finish)";
+    if (val <= 50) return "BALANCED SIPPABLE (Clean vintage wood notes)";
+    if (val <= 80) return "OAK BRIGHT (Neutral cask tannins, subtle forest nose)";
+    return "HISTORIC FUNK (Indigenous wild yeasts, clay floor depth)";
   };
 
   // Dynamic user naming label
@@ -540,7 +540,7 @@ export default function Blog() {
         <div className="hidden lg:flex items-center gap-3.5 bg-stone-900/40 p-3 rounded-xl border border-stone-850/60 max-w-sm">
           <QrCode className="text-amber-500 w-10 h-10 shrink-0 opacity-80" />
           <div className="text-[10px] font-sans text-stone-400">
-            <span className="font-bold text-stone-200 block">📲 TABLE-SIDE FLIGHT MATCH?</span>
+            <span className="font-bold text-stone-200 block">TABLE-SIDE FLIGHT MATCH</span>
             Guests can scan flight-paddle QR codes to launch this portal live. Zero login barriers to pin a taste!
           </div>
         </div>
@@ -559,7 +559,7 @@ export default function Blog() {
                 : 'text-stone-400 hover:text-stone-200 hover:bg-stone-900/35'
             }`}
           >
-            <span>🍏 1. Log a Taste</span>
+            <span>1. Log a Taste</span>
           </button>
           
           <button
@@ -570,7 +570,7 @@ export default function Blog() {
                 : 'text-stone-400 hover:text-stone-200 hover:bg-stone-900/35'
             }`}
           >
-            <span>📓 2. My Cellar</span>
+            <span>2. My Cellar</span>
             {(currentUser ? cloudHistory.length > 0 : localHistory.length > 0) && (
               <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-sans ${activeTab === 'my-cellar' ? 'bg-stone-950 text-amber-500 font-bold' : 'bg-amber-500/10 text-amber-400 font-bold'}`}>
                 {currentUser ? cloudHistory.length : localHistory.length}
@@ -586,7 +586,7 @@ export default function Blog() {
                 : 'text-stone-400 hover:text-stone-200 hover:bg-stone-900/35'
             }`}
           >
-            <span>📣 3. Taproom Feed</span>
+            <span>3. Taproom Feed</span>
           </button>
         </div>
 
@@ -704,8 +704,8 @@ export default function Blog() {
 
                       {/* Slide range markers */}
                       <div className="flex justify-between text-[8px] font-mono text-stone-600 uppercase font-black tracking-widest">
-                        <span>🍏 Bone Dry</span>
-                        <span>🍯 Honey Sweet</span>
+                        <span>Bone Dry</span>
+                        <span>Honey Sweet</span>
                       </div>
 
                       {/* Dynamic updating micro-copy */}
@@ -737,8 +737,8 @@ export default function Blog() {
 
                       {/* Slide range markers */}
                       <div className="flex justify-between text-[8px] font-mono text-stone-600 uppercase font-black tracking-widest">
-                        <span>⚡ Clean & Crisp</span>
-                        <span>🪵 Wild Funk</span>
+                        <span>Clean & Crisp</span>
+                        <span>Wild Funk</span>
                       </div>
 
                       {/* Dynamic updating micro-copy */}
@@ -777,7 +777,6 @@ export default function Blog() {
                                 : 'bg-stone-900/40 text-stone-400 border-stone-900 hover:border-stone-800 hover:text-stone-300'
                             }`}
                           >
-                            <span>{pill.emoji}</span>
                             <span>{pill.label}</span>
                           </motion.button>
                         );
@@ -812,7 +811,7 @@ export default function Blog() {
                       className="bg-amber-600/5 p-4 rounded-xl border border-amber-500/10 space-y-2 text-left"
                     >
                       <label className="text-[9px] text-amber-500 font-mono uppercase font-black tracking-wider block">
-                        👤 Enter Guest Initials/Name (No password required)
+                        Enter Guest Initials/Name (No password required)
                       </label>
                       <input
                         type="text"
@@ -841,10 +840,10 @@ export default function Blog() {
                         className="bg-stone-900 p-1.5 rounded-lg border border-stone-850 flex gap-1 text-[9px] font-mono select-none cursor-pointer transition-colors hover:border-stone-800"
                       >
                         <span className={`px-2 py-1 rounded text-center transition-all ${!publishLive ? 'bg-stone-950 text-amber-400 border border-stone-850 font-bold' : 'text-stone-500'}`}>
-                          🔏 PRIVATE
+                          PRIVATE
                         </span>
                         <span className={`px-2 py-1 rounded text-center transition-all ${publishLive ? 'bg-amber-600 text-stone-950 font-black shadow-md' : 'text-stone-500'}`}>
-                          🌐 TAPROOM LIVE
+                          TAPROOM LIVE
                         </span>
                       </button>
                     </div>
@@ -869,7 +868,7 @@ export default function Blog() {
                         exit={{ opacity: 0 }}
                         className="p-3 text-center text-[10px] bg-emerald-950/20 text-emerald-400 border border-emerald-500/20 rounded-xl font-mono mt-4"
                       >
-                        ✓ Tasting saved successfully! Instantly displayed on Cask Scrapbook projection.
+                        Tasting saved successfully! Instantly displayed on Cask Scrapbook projection.
                       </motion.div>
                     )}
                   </AnimatePresence>
@@ -884,7 +883,7 @@ export default function Blog() {
                     <div className="text-center pb-2 border-b border-stone-900">
                       <span className="text-[8px] text-amber-500 uppercase tracking-[0.25em] font-mono font-bold block">Physical Event Bridge</span>
                       <h4 className="font-serif text-xs text-stone-200 uppercase font-black tracking-widest mt-1">
-                        🎨 Flight Paddles QR Setup
+                        Flight Paddles QR Setup
                       </h4>
                     </div>
 
@@ -949,7 +948,7 @@ export default function Blog() {
                   <div className="bg-stone-950/40 p-5 rounded-2xl border border-stone-900 space-y-3.5 text-left text-xs font-sans">
                     <span className="text-[8px] text-amber-500 uppercase tracking-widest font-mono font-black block">Harvester Note</span>
                     <h5 className="font-serif text-stone-200 text-xs uppercase font-bold tracking-wider flex items-center gap-1.5">
-                      🚜 Spitters vs Sweet Cooking fruit?
+                      Spitters vs Sweet Cooking fruit?
                     </h5>
                     <p className="text-[9px] text-stone-400 leading-relaxed italic">
                       "Real artisanal cider demands spitters—ancient apple cultivars so heavy in tannins & malic acid that they taste completely bitter raw but ferment into gold. Golden Russet & Wickson Crab are our pride here." — Travis Godley
@@ -979,7 +978,7 @@ export default function Blog() {
                   <div className="text-left space-y-1">
                     <span className="text-[8px] font-mono text-stone-500 uppercase block tracking-widest font-bold">Local & Secure Database Records</span>
                     <h3 className="font-serif text-base text-stone-100 uppercase tracking-wide font-black">
-                      🍷 Your Saved Cider Cellar
+                      Your Saved Cider Cellar
                     </h3>
                     <p className="text-[10px] text-stone-400 font-sans max-w-xl">
                       {currentUser 
@@ -1099,7 +1098,7 @@ export default function Blog() {
                           {/* Footer details */}
                           <div className="flex justify-between items-center text-[8px] font-mono text-stone-500 border-t border-stone-900 pt-3 mt-2">
                             <span className="uppercase">
-                              {log.makePublic ? '🌐 Shared to board' : '🔒 Private log'}
+                              {log.makePublic ? 'Shared to board' : 'Private log'}
                             </span>
                             <span>
                               {log.localDate || (log.createdAt ? new Date(log.createdAt.seconds * 1000).toLocaleDateString() : 'Just now')}
@@ -1140,7 +1139,7 @@ export default function Blog() {
                           : 'bg-stone-900/10 text-stone-400 border-stone-900 hover:text-stone-300 hover:border-stone-850'
                       }`}
                     >
-                      📣 Live Polaroid Board
+                      Live Polaroid Board
                     </button>
                     
                     <button
@@ -1151,11 +1150,11 @@ export default function Blog() {
                           : 'bg-stone-900/10 text-stone-400 border-stone-900 hover:text-stone-300 hover:border-stone-850'
                       }`}
                     >
-                      📖 Cidermaker's Log (SEO Archives)
+                      Cidermaker's Log (SEO Archives)
                     </button>
                   </div>
 
-                  {/* 🎟️ Taproom Physical-to-Digital Bridge activation button */}
+                  {/* Taproom Physical-to-Digital Bridge activation button */}
                   <div className="flex items-center gap-2 w-full sm:w-auto">
                     <button
                       type="button"
@@ -1166,7 +1165,7 @@ export default function Blog() {
                       className="w-full sm:w-auto px-4 py-2 rounded-xl text-[11px] font-sans font-bold uppercase tracking-wider cursor-pointer bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-stone-950 shadow-[0_0_20px_rgba(217,119,6,0.25)] hover:shadow-[0_0_30px_rgba(217,119,6,0.4)] transition-all duration-350 flex items-center justify-center gap-2 group"
                     >
                       <Tv size={13} className="animate-pulse" />
-                      <span>🎟️ Open Projector Theater Mode</span>
+                      <span>Open Projector Theater Mode</span>
                     </button>
                   </div>
                 </div>
@@ -1184,7 +1183,7 @@ export default function Blog() {
                     >
                       <div className="max-w-2xl text-left bg-stone-950/20 p-4 border border-stone-900 rounded-xl space-y-1">
                         <span className="text-[8px] font-mono text-stone-500 block uppercase font-bold">Asymmetrical Pinterest Board</span>
-                        <h4 className="font-serif text-sm text-stone-300 uppercase font-black">📣 The Cask Room Scrapbook</h4>
+                        <h4 className="font-serif text-sm text-stone-300 uppercase font-black">The Cask Room Scrapbook</h4>
                         <p className="text-[9px] text-stone-500 font-sans leading-relaxed">
                           Somatic review cards displayed directly from desktop and table smartphones. Tap the red cheers heart on any card to toast back!
                         </p>
@@ -1245,7 +1244,7 @@ export default function Blog() {
                                         transition={{ duration: 1.4, ease: 'easeOut' }}
                                         className="absolute pointer-events-none text-red-500 text-base z-50 select-none font-sans filter drop-shadow"
                                       >
-                                        ❤️
+                                        <Heart className="w-4 h-4 fill-red-500 text-red-500" />
                                       </motion.div>
                                     ))
                                   }
@@ -1283,15 +1282,11 @@ export default function Blog() {
                                   <div className="space-y-1">
                                     <span className="text-[7.5px] font-mono text-stone-500 uppercase block tracking-wider font-bold">Event Pairing:</span>
                                     <div className="flex flex-wrap gap-1">
-                                      {log.pairings.map((p: string) => {
-                                        const found = PAIRING_BUBBLES.find(b => b.label === p);
-                                        return (
-                                          <span key={p} className="text-[9px] font-sans bg-stone-900 text-stone-400 px-2 py-0.5 rounded border border-stone-850 inline-flex items-center gap-1">
-                                            <span>{found ? found.emoji : "🍎"}</span>
-                                            <span className="text-[8px] uppercase tracking-wider font-bold">{p}</span>
-                                          </span>
-                                        );
-                                      })}
+                                      {log.pairings.map((p: string) => (
+                                        <span key={p} className="text-[9px] font-sans bg-stone-900 text-stone-400 px-2 py-0.5 rounded border border-stone-850 inline-flex items-center gap-1">
+                                          <span className="text-[8px] uppercase tracking-wider font-bold">{p}</span>
+                                        </span>
+                                      ))}
                                     </div>
                                   </div>
                                 )}
@@ -1402,7 +1397,7 @@ export default function Blog() {
                                   
                                   {/* Compact reading adjustments controller bar */}
                                   <div className="flex justify-between items-center bg-stone-900/20 p-2 rounded-lg border border-stone-900 text-[9px] font-mono text-stone-500">
-                                    <span className="uppercase font-bold tracking-wider text-stone-400">📖 Reader Prefs</span>
+                                    <span className="uppercase font-bold tracking-wider text-stone-400">Reader Preferences</span>
                                     
                                     <div className="flex gap-2.5">
                                       <button 
@@ -1473,7 +1468,7 @@ export default function Blog() {
                                       <div>
                                         <span className="text-[7.5px] text-amber-500 font-mono uppercase tracking-widest block font-bold">Harvester's Lab Index</span>
                                         <h5 className="font-serif text-[10.5px] uppercase tracking-wider text-stone-200 mt-0.5">
-                                          🔬 Terroir Chemical Properties
+                                          Terroir Chemical Properties
                                         </h5>
                                       </div>
 
@@ -1610,7 +1605,7 @@ export default function Blog() {
                           : 'text-stone-400 hover:text-stone-200 hover:bg-stone-900'
                       }`}
                     >
-                      {t === 'candlelight' ? '🔥 Warm' : t === 'midnight' ? '🌌 Cosmic' : '🌳 Grove'}
+                      {t === 'candlelight' ? 'Warm' : t === 'midnight' ? 'Cosmic' : 'Grove'}
                     </button>
                   ))}
                 </div>
@@ -1760,7 +1755,7 @@ export default function Blog() {
                             <div className="space-y-1">
                               <span className="text-[9px] uppercase tracking-widest text-stone-500 block font-sans">Sensory Tasted By</span>
                               <span className="font-serif text-lg text-amber-500 font-bold block">
-                                🚜 {activeLog.authorName}
+                                {activeLog.authorName}
                               </span>
                             </div>
 
@@ -1769,15 +1764,11 @@ export default function Blog() {
                               <div className="space-y-1 border-l border-stone-900 pl-6">
                                 <span className="text-[9px] uppercase tracking-widest text-stone-500 block font-sans">Harmonious Pairings</span>
                                 <div className="flex gap-2">
-                                  {activeLog.pairings.map((p: string) => {
-                                    const matched = PAIRING_BUBBLES.find(b => b.label === p);
-                                    return (
-                                      <span key={p} className="text-xs bg-stone-905/60 text-stone-300 border border-stone-850 px-3 py-1 bg-stone-900 rounded-xl font-medium flex items-center gap-1.5">
-                                        <span>{matched ? matched.emoji : '🍎'}</span>
-                                        <span>{p}</span>
-                                      </span>
-                                    );
-                                  })}
+                                  {activeLog.pairings.map((p: string) => (
+                                    <span key={p} className="text-xs bg-stone-905/60 text-stone-300 border border-stone-850 px-3 py-1 bg-stone-900 rounded-xl font-medium flex items-center gap-1.5">
+                                      <span>{p}</span>
+                                    </span>
+                                  ))}
                                 </div>
                               </div>
                             )}
@@ -1830,7 +1821,7 @@ export default function Blog() {
                   <div className="space-y-1">
                     <span className="text-[8.5px] text-amber-500 font-sans uppercase tracking-[0.2em] font-black block">Join The Taproom Scroll</span>
                     <h4 className="font-serif text-sm text-stone-100 uppercase tracking-widest font-black">
-                      💬 Pin Your Taste Live!
+                      Pin Your Taste Live!
                     </h4>
                   </div>
 
@@ -1853,7 +1844,7 @@ export default function Blog() {
 
                   <div className="space-y-2">
                     <span className="text-[10px] font-sans font-extrabold uppercase text-stone-200 block tracking-wider">
-                      📲 SCAN WITH PHONE CAMERA
+                      SCAN WITH PHONE CAMERA
                     </span>
                     <p className="text-[10px] text-stone-400 font-sans leading-relaxed">
                       Zero sign-up barrier. Simply scan flight coasters at your table, rate sweetness, acid, and oak funk — then hit share to see it on the screen!

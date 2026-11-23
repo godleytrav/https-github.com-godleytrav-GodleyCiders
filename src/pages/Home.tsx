@@ -1,6 +1,7 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
+import { Camera, Sparkles } from 'lucide-react';
 import ProductSpecimen from '../components/ProductSpecimen';
 import { useAdminStore } from '../store/adminStore';
 
@@ -160,6 +161,57 @@ export default function Home() {
                 />
               </div>
             </div>
+          </div>
+        </motion.div>
+      </section>
+      
+      {/* Live Label AR Experience Spotlight */}
+      <section className="max-w-5xl mx-auto px-6">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.8 }}
+          className="bg-gradient-to-r from-stone-950/90 via-amber-950/20 to-stone-950/90 backdrop-blur-md border border-amber-500/30 rounded-2xl p-8 md:p-12 relative overflow-hidden shadow-2xl flex flex-col md:flex-row items-center justify-between gap-8"
+        >
+          <div className="space-y-4 max-w-xl">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+              <span className="text-[10px] font-mono tracking-widest text-amber-500 uppercase font-bold">
+                Augmented Bottle Technology
+              </span>
+            </div>
+            <h2 className="text-2xl md:text-3xl font-serif text-stone-100 uppercase tracking-wider">
+              Experience The Live Label
+            </h2>
+            <p className="text-stone-300 font-serif text-sm leading-relaxed">
+              No app download required. Scan any Godley Ciders bottle or taproom coaster using your phone camera to watch the label come to life with animated harvest cinematography, living foothill mist, and cellar master tasting notes.
+            </p>
+            <div className="flex flex-wrap items-center gap-4 pt-2">
+              <button
+                onClick={() => navigate('/live')}
+                className="px-6 py-3 bg-amber-600 hover:bg-amber-500 text-stone-950 uppercase tracking-widest text-xs font-sans font-bold rounded-lg transition-all shadow-lg flex items-center gap-2 cursor-pointer"
+              >
+                <Camera size={14} />
+                <span>Launch Live Scanner</span>
+              </button>
+              <button
+                onClick={() => navigate('/live')}
+                className="px-6 py-3 border border-stone-700 hover:border-amber-500 text-stone-300 hover:text-white uppercase tracking-widest text-xs font-sans font-semibold rounded-lg transition-all cursor-pointer"
+              >
+                <span>Explore 3D Studio</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="relative w-48 h-64 flex items-center justify-center shrink-0">
+            <div className="absolute inset-0 bg-amber-500/10 rounded-full blur-2xl animate-pulse" />
+            <img
+              src="/assets/ciders/(store)The_knowedge.webp"
+              alt="Live Label Bottle"
+              referrerPolicy="no-referrer"
+              className="w-full h-full object-contain filter drop-shadow-[0_15px_30px_rgba(0,0,0,0.9)] relative z-10"
+            />
           </div>
         </motion.div>
       </section>

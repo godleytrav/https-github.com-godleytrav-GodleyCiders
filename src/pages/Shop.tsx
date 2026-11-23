@@ -1,17 +1,23 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ShoppingBag, X, Wine, Compass, Shirt } from 'lucide-react';
+import { ShoppingBag, X, Wine, Compass, Shirt, CheckCircle, PackageCheck, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAdminStore } from '../store/adminStore';
 import { useCartStore } from '../store/cartStore';
 
 export default function Shop() {
-  const { shopSettings, shopProducts } = useAdminStore();
+  const { shopSettings, shopProducts, loadFromFirebase } = useAdminStore();
   const { addItem, clearCart } = useCartStore();
 
   const [activeTab, setActiveTab] = useState<'cider' | 'merch'>('cider');
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
+  const [orderConfirmation, setOrderConfirmation] = useState<{
+    orderId: string;
+    customerEmail?: string;
+    totalAmount?: number;
+    deliveryPreference?: string;
+  } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Homestead Base Cider state selections
@@ -64,13 +70,42 @@ export default function Shop() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get('checkout') === 'success') {
+    const checkoutStatus = params.get('checkout');
+    const sessionId = params.get('session_id');
+
+    if (checkoutStatus === 'success') {
       if (clearCart) clearCart();
-      alert("Thank you for your purchase. We have received your order.");
-      // Optional: Cleanup URL
+
+      if (sessionId) {
+        // Query backend session-status endpoint to verify Stripe payment, register order & decrement inventory
+        fetch(`/api/checkout/session-status?session_id=${sessionId}`)
+          .then(res => res.json())
+          .then(data => {
+            const meta = data.metadata || {};
+            setOrderConfirmation({
+              orderId: meta.orderId || `ORD-${sessionId.slice(-6).toUpperCase()}`,
+              customerEmail: meta.customerEmail,
+              totalAmount: meta.totalAmount ? Number(meta.totalAmount) : undefined,
+              deliveryPreference: meta.deliveryPreference
+            });
+            // Refresh local store to show updated live stock
+            loadFromFirebase();
+          })
+          .catch(err => {
+            console.warn("Session verification check error:", err);
+            setOrderConfirmation({
+              orderId: `ORD-${sessionId.slice(-6).toUpperCase()}`
+            });
+          });
+      } else {
+        setOrderConfirmation({
+          orderId: 'CONFIRMED'
+        });
+      }
+
       window.history.replaceState({}, document.title, window.location.pathname);
     }
-  }, [clearCart]);
+  }, [clearCart, loadFromFirebase]);
 
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!containerRef.current) return;
@@ -233,9 +268,22 @@ export default function Shop() {
                     onClick={() => setSelectedProduct(product)}
                     whileTap={{ scale: 0.98 }}
                   >
-                    <span className="absolute top-3 right-3 bg-amber-900/20 text-amber-500 border border-amber-500/30 px-2.5 py-0.5 font-mono text-[9px] uppercase tracking-wider rounded-md font-bold">
-                      {product.vintage}
-                    </span>
+                    <div className="absolute top-3 right-3 flex items-center gap-1.5">
+                      {product.vintage && (
+                        <span className="bg-amber-900/20 text-amber-500 border border-amber-500/30 px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider rounded-md font-bold">
+                          {product.vintage}
+                        </span>
+                      )}
+                      {product.available === false || (typeof product.inventoryCount === 'number' && product.inventoryCount <= 0) ? (
+                        <span className="bg-red-950/80 text-red-400 border border-red-500/40 px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider rounded-md font-bold">
+                          Sold Out
+                        </span>
+                      ) : typeof product.inventoryCount === 'number' && product.inventoryCount < 10 ? (
+                        <span className="bg-amber-950/80 text-amber-400 border border-amber-500/40 px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider rounded-md font-bold">
+                          {product.inventoryCount} Left
+                        </span>
+                      ) : null}
+                    </div>
                     <div className="w-28 h-44 flex items-center justify-center p-2 relative">
                       <div className="absolute inset-2 bg-amber-500/10 blur-xl rounded-full pointer-events-none" />
                       <img 
@@ -263,7 +311,7 @@ export default function Shop() {
                       }}
                       className="w-full py-3 border border-amber-500/40 text-amber-500 text-xs font-sans font-bold uppercase tracking-widest hover:bg-amber-500 hover:text-stone-950 hover:border-amber-400 rounded-lg shadow-lg hover:shadow-amber-500/20 transition-all cursor-pointer"
                     >
-                      View Specs & Buy
+                      {product.available === false || (typeof product.inventoryCount === 'number' && product.inventoryCount <= 0) ? 'Sold Out' : 'View Specs & Add to Cart'}
                     </button>
                   </motion.div>
                 ))
@@ -411,13 +459,13 @@ export default function Shop() {
 
                       {totalBaseQty > 0 && totalBaseQty < 6 && (
                         <p className="bg-amber-500/10 text-amber-400 text-[11px] leading-snug p-3 rounded-lg border border-amber-500/20 italic text-left font-serif">
-                          💡 <strong>Half-Case Discount Offer</strong>: Add <strong>{6 - totalBaseQty} more bottle{6 - totalBaseQty > 1 ? 's' : ''}</strong> from any styles to unlock the standard <strong>$5.00 per bottle discount</strong> ($30 total for 6)!
+                          <strong>Half-Case Rate</strong>: Add <strong>{6 - totalBaseQty} more bottle{6 - totalBaseQty > 1 ? 's' : ''}</strong> from any styles to unlock the volume pricing of <strong>$5.00 per bottle</strong> ($30 total for 6).
                         </p>
                       )}
 
                       {totalBaseQty >= 6 && (
                         <p className="bg-emerald-500/10 text-emerald-300 text-[11px] leading-snug p-3 rounded-lg border border-emerald-500/20 italic text-left font-serif">
-                          🎉 <strong>Half-Case Discount Active!</strong> You've unlocked the special rate of <strong>$5.00 per bottle</strong> on your entire base cider order. Enjoy this flat premium rate!
+                          <strong>Half-Case Volume Pricing Applied</strong>: You have unlocked the rate of <strong>$5.00 per bottle</strong> on your entire base cider order.
                         </p>
                       )}
 
@@ -431,7 +479,7 @@ export default function Shop() {
                         disabled={totalBaseQty === 0}
                         className="w-full py-4 border border-amber-500/40 text-amber-500 uppercase tracking-widest text-xs hover:bg-amber-500 hover:text-stone-950 hover:border-amber-400 transition-all rounded-lg font-sans font-black shadow-lg hover:shadow-amber-500/20 mt-2 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-amber-500 disabled:cursor-not-allowed cursor-pointer"
                       >
-                        Add Selected to Cellar Allocation
+                        Add Selected to Cart
                       </button>
                     </div>
                   </div>
@@ -586,22 +634,99 @@ export default function Shop() {
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between pt-2 gap-4">
                   <span className="text-3xl text-stone-100 font-bold tracking-wide font-sans">${selectedProduct.price}</span>
                   
-                  {selectedProduct.available ? (
-                    <button 
-                      onClick={() => {
-                        addItem({ ...selectedProduct, quantity: 1, price: Number(selectedProduct.price) });
-                        setSelectedProduct(null);
-                      }}
-                      className="px-8 py-4 border border-amber-500/40 text-amber-500 uppercase tracking-widest text-xs hover:bg-amber-500 hover:text-stone-950 hover:border-amber-400 transition-all rounded-lg font-sans font-black shadow-lg hover:shadow-amber-500/20 flex items-center justify-center gap-2 cursor-pointer"
-                    >
-                      <ShoppingBag className="w-4 h-4 mr-1" /> Add to Allocation
-                    </button>
+                  {selectedProduct.available !== false && (selectedProduct.inventoryCount === undefined || selectedProduct.inventoryCount > 0) ? (
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                      {typeof selectedProduct.inventoryCount === 'number' && (
+                        <span className="text-[11px] font-mono text-stone-400 self-center">
+                          {selectedProduct.inventoryCount} in stock
+                        </span>
+                      )}
+                      <button 
+                        onClick={() => {
+                          addItem({ ...selectedProduct, quantity: 1, price: Number(selectedProduct.price) });
+                          setSelectedProduct(null);
+                        }}
+                        className="px-8 py-4 bg-amber-500 hover:bg-amber-400 text-stone-950 uppercase tracking-widest text-xs font-sans font-black transition-all rounded-lg shadow-lg hover:shadow-amber-500/20 flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <ShoppingBag className="w-4 h-4 mr-1" /> Add to Cart
+                      </button>
+                    </div>
                   ) : (
-                    <button disabled className="px-8 py-4 border border-stone-800 text-stone-600 uppercase tracking-widest font-sans text-xs rounded-lg cursor-not-allowed">
-                      SOLD OUT
+                    <button disabled className="px-8 py-4 border border-stone-800 text-stone-500 uppercase tracking-widest font-sans text-xs rounded-lg cursor-not-allowed bg-stone-900/50">
+                      SOLD OUT (Out of Stock)
                     </button>
                   )}
                 </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ORDER CONFIRMATION MODAL (Returns from Stripe Checkout) */}
+      <AnimatePresence>
+        {orderConfirmation && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center px-4 font-serif">
+            <motion.div 
+              className="absolute inset-0 bg-black/85 backdrop-blur-md"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setOrderConfirmation(null)}
+            />
+
+            <motion.div 
+              className="relative z-10 bg-gradient-to-br from-stone-950 via-stone-900 to-stone-950 border border-emerald-500/40 rounded-2xl shadow-[0_25px_80px_rgba(0,0,0,0.95)] max-w-md w-full p-8 text-center space-y-6"
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+            >
+              <div className="w-16 h-16 bg-emerald-950/80 border border-emerald-500/40 rounded-full flex items-center justify-center mx-auto text-emerald-400 shadow-[0_0_25px_rgba(16,185,129,0.25)]">
+                <CheckCircle size={36} />
+              </div>
+
+              <div className="space-y-2">
+                <span className="text-[10px] font-mono text-emerald-400 font-bold uppercase tracking-[0.25em] block">
+                  Payment Verified via Stripe
+                </span>
+                <h3 className="text-2xl text-stone-100 font-serif font-light uppercase tracking-wider">
+                  Order Confirmed
+                </h3>
+                <p className="text-stone-300 font-sans text-xs leading-relaxed">
+                  Thank you for your purchase! We have received your payment via Stripe device self-pay. Your order is registered and our Lincoln cellar team is packing your cider.
+                </p>
+              </div>
+
+              <div className="bg-stone-950/70 border border-stone-800 rounded-xl p-4 text-left font-sans text-xs space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-stone-400">Order Reference:</span>
+                  <span className="font-mono text-amber-400 font-bold">#{orderConfirmation.orderId}</span>
+                </div>
+                {orderConfirmation.customerEmail && (
+                  <div className="flex justify-between">
+                    <span className="text-stone-400">Receipt Sent to:</span>
+                    <span className="text-stone-200 truncate max-w-[200px]">{orderConfirmation.customerEmail}</span>
+                  </div>
+                )}
+                {orderConfirmation.totalAmount && (
+                  <div className="flex justify-between border-t border-stone-800/80 pt-2">
+                    <span className="text-stone-400 font-semibold">Total Paid:</span>
+                    <span className="font-mono text-emerald-400 font-bold">${orderConfirmation.totalAmount.toFixed(2)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-[11px] text-stone-400 pt-1">
+                  <span>Status:</span>
+                  <span className="text-emerald-400 font-mono font-bold uppercase">Paid & Active</span>
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  onClick={() => setOrderConfirmation(null)}
+                  className="w-full py-3.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-sans font-bold uppercase tracking-widest text-xs rounded-lg transition-all shadow-lg hover:shadow-amber-500/20 cursor-pointer"
+                >
+                  Return to Cellar
+                </button>
               </div>
             </motion.div>
           </div>

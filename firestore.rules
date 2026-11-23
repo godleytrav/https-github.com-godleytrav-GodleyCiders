@@ -51,9 +51,18 @@ service cloud.firestore {
       allow read, update, delete: if isGodleyAdmin();
     }
 
+    function isValidWholesaleInquiry(data) {
+      return data.keys().hasAll(['businessName', 'contactName', 'email', 'phone', 'status'])
+          && data.businessName is string && data.businessName.size() > 0 && data.businessName.size() <= 150
+          && data.contactName is string && data.contactName.size() > 0 && data.contactName.size() <= 120
+          && data.email is string && data.email.size() > 0 && data.email.size() <= 160
+          && data.phone is string && data.phone.size() <= 40
+          && data.status in ['lead', 'pending', 'hold', 'approved', 'rejected'];
+    }
+
     match /wholesale_inquiries/{inquiryId} {
       allow read: if isGodleyAdmin() || (isSignedIn() && resource.data.email == request.auth.token.email);
-      allow create: if isValidId(inquiryId) && (isGodleyAdmin() || (isSignedIn() && incoming().email == request.auth.token.email));
+      allow create: if isValidId(inquiryId) && isValidWholesaleInquiry(incoming()) && (isGodleyAdmin() || (isSignedIn() && incoming().email == request.auth.token.email));
       allow update: if isGodleyAdmin();
       allow delete: if isGodleyAdmin();
     }
@@ -71,6 +80,11 @@ service cloud.firestore {
     }
 
     match /admin_settings/{settingId} {
+      allow read: if true;
+      allow write: if isGodleyAdmin();
+    }
+
+    match /live_labels/{labelId} {
       allow read: if true;
       allow write: if isGodleyAdmin();
     }

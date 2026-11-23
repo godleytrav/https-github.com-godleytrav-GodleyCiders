@@ -925,7 +925,7 @@ export default function EmployeePortal() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             to: res.email,
-            subject: '🎉 Godley Ciders - Priority Allocation Ready!',
+            subject: 'Godley Ciders - Priority Allocation Ready',
             text: textContent,
             from: 'billing@godleyciders.com'
           })
@@ -1269,7 +1269,7 @@ export default function EmployeePortal() {
           body: JSON.stringify(syncEvent)
         }).catch(err => console.warn(err));
 
-        setWaitlistLogs(prev => [...prev, `✅ Fully Admitted: ${lead.name} - Billing initialized & Welcome email dispatched.`]);
+        setWaitlistLogs(prev => [...prev, `[SUCCESS] Fully Admitted: ${lead.name} - Billing initialized & Welcome email dispatched.`]);
         successfulCount++;
       }
 
@@ -1293,12 +1293,12 @@ export default function EmployeePortal() {
       });
       await useAdminStore.getState().saveToFirebase();
 
-      setWaitlistLogs(prev => [...prev, `🏁 Batch Process Complete! Success: ${successfulCount}/${toAdmit.length}. Tier allocation updated.`]);
+      setWaitlistLogs(prev => [...prev, `[COMPLETE] Batch Process Complete! Success: ${successfulCount}/${toAdmit.length}. Tier allocation updated.`]);
       alert(`Batch processing successfully admitted ${successfulCount} members to ${tier} Club!`);
       
     } catch (err: any) {
       console.error(err);
-      setWaitlistLogs(prev => [...prev, `❌ Error during batch run: ${err.message}`]);
+      setWaitlistLogs(prev => [...prev, `[ERROR] Error during batch run: ${err.message}`]);
       alert(`Batch process incomplete: ${err.message}`);
     } finally {
       setIsProcessingBatch(false);
@@ -1638,7 +1638,7 @@ export default function EmployeePortal() {
                       onClick={() => setPosSuccessReceipt(null)}
                       className="text-amber-500 hover:text-amber-400 font-bold uppercase tracking-widest text-[9px] bg-stone-900/40 px-2 py-0.5 rounded border border-stone-800"
                     >
-                      ✓ Close
+                      Close
                     </button>
                   </div>
 
@@ -2260,11 +2260,11 @@ export default function EmployeePortal() {
                                     <span className="text-stone-500">Fulfillment:</span>{' '}
                                     {res.deliveryPreference === 'shipping' ? (
                                       <span className="text-amber-400/90">
-                                        🚚 CA Ground Freight ({res.street ? `${res.street}, ${res.city}, ${res.state} ${res.zip}` : 'California Address'})
+                                        CA Ground Freight ({res.street ? `${res.street}, ${res.city}, ${res.state} ${res.zip}` : 'California Address'})
                                       </span>
                                     ) : (
                                       <span className="text-emerald-400/90">
-                                        🍇 Complimentary Placer County Cellar Pickup
+                                        Complimentary Placer County Cellar Pickup
                                       </span>
                                     )}
                                   </p>
@@ -2716,7 +2716,7 @@ export default function EmployeePortal() {
                   clubSubTab === 'directory' ? 'text-amber-500 font-bold' : 'text-stone-500 hover:text-stone-300'
                 }`}
               >
-                📁 Member Directory
+                Member Directory
                 {clubSubTab === 'directory' && <span className="absolute bottom-[-9px] left-0 right-0 h-[2.5px] bg-amber-500 rounded-full" />}
               </button>
               <button
@@ -2726,7 +2726,7 @@ export default function EmployeePortal() {
                   clubSubTab === 'taps' ? 'text-amber-500 font-bold' : 'text-stone-500 hover:text-stone-300'
                 }`}
               >
-                📶 Contactless Taps Fee
+                Contactless Taps Fee
                 {liveCheckins.filter(c => c.status === 'pending').length > 0 && (
                   <span className="bg-amber-600 text-stone-950 font-mono font-extrabold text-[9px] px-1.5 py-0.2 rounded-full leading-none animate-pulse">
                     {liveCheckins.filter(c => c.status === 'pending').length}
@@ -2881,7 +2881,7 @@ export default function EmployeePortal() {
                             <h4 className="font-serif font-medium text-stone-200 text-sm truncate">{lead.name}</h4>
                             {hasActiveCheckin && (
                               <span className="inline-flex items-center gap-1 bg-amber-500 text-stone-950 font-sans font-black text-[7px] px-1 rounded-sm uppercase tracking-wide animate-pulse">
-                                📶 Tap Waiting
+                                Tap Waiting
                               </span>
                             )}
                           </div>
@@ -2946,7 +2946,7 @@ export default function EmployeePortal() {
                       </p>
                       {selectedClubLead.paymentVaulted && (
                         <p className="text-[10px] text-stone-300 font-sans mt-0.5">
-                          🔒 Vaulted Payment: <strong className="text-emerald-400 font-mono">Stripe Tokenized (*{selectedClubLead.vaultedCardLast4 || '4242'} - Exp: {selectedClubLead.vaultedExpiry || '12/28'})</strong>
+                          Vaulted Payment: <strong className="text-emerald-400 font-mono">Stripe Tokenized (*{selectedClubLead.vaultedCardLast4 || '4242'} - Exp: {selectedClubLead.vaultedExpiry || '12/28'})</strong>
                         </p>
                       )}
                     </div>
@@ -2978,7 +2978,7 @@ export default function EmployeePortal() {
                         onClick={() => handleGrantWaitlistSpot(selectedClubLead.id)}
                         className="bg-amber-600 hover:bg-amber-550 text-stone-950 uppercase tracking-wider text-[10px] font-serif font-extrabold h-10 px-5 shrink-0 rounded-sm border-none shadow-[0_0_15px_rgba(217,119,6,0.3)] transition-all"
                       >
-                        ✓ Grant Active Spot
+                        Grant Active Spot
                       </Button>
                     </div>
                   )}
@@ -3012,7 +3012,7 @@ export default function EmployeePortal() {
                           <div className="font-sans text-[11px] text-stone-400 min-h-[1.5rem] flex items-center">
                             {p.fulfilled ? (
                               <div className="space-y-0.5">
-                                <p className="text-emerald-500 font-medium">✓ Handed out by staff</p>
+                                <p className="text-emerald-500 font-medium">Handed out by staff</p>
                                 <p className="text-[9px] text-stone-500 font-mono">Picked up on: {new Date(p.fulfilledAt).toLocaleDateString()} via {p.fulfilledBy}</p>
                               </div>
                             ) : (
@@ -3160,7 +3160,7 @@ export default function EmployeePortal() {
                       <div className="absolute inset-x-0 inset-y-0 rounded-full border-2 border-dashed border-amber-500/20 animate-spin"></div>
                       <div className="absolute w-16 h-16 rounded-full border border-amber-500/40 animate-ping opacity-30"></div>
                       <div className="w-12 h-12 rounded-full bg-amber-500/10 border border-amber-500/40 flex items-center justify-center text-amber-500">
-                        📡
+                        
                       </div>
                     </div>
                     
@@ -3199,7 +3199,7 @@ export default function EmployeePortal() {
               <div className="md:col-span-7 bg-stone-900 border border-stone-850 p-6 rounded space-y-4 shadow-xl text-left">
                 <div className="border-b border-stone-800 pb-3 flex items-center justify-between">
                   <h3 className="text-stone-100 font-serif text-sm uppercase tracking-wider flex items-center gap-1.5 font-bold">
-                    <span>📋 Active Counter Check-In Queue</span>
+                    <span>Active Counter Check-In Queue</span>
                   </h3>
                   <span className="bg-amber-600/10 text-amber-500 font-mono text-[9px] px-2 py-0.5 rounded border border-amber-500/20 font-bold">
                     {liveCheckins.filter(c => c.status === 'pending').length} Tap(s) Waiting
@@ -3260,11 +3260,11 @@ export default function EmployeePortal() {
                             <div>
                               {remainingVouchers.length > 0 ? (
                                 <span className="text-amber-400 font-bold">
-                                  ⚠️ {remainingVouchers.length} Prepaid allocation ticket(s) awaiting checkout
+                                  {remainingVouchers.length} Prepaid allocation ticket(s) awaiting checkout
                                 </span>
                               ) : (
                                 <span className="text-emerald-500">
-                                  ✓ All monthly allocations are clear and fulfilled!
+                                  All monthly allocations are clear and fulfilled
                                 </span>
                               )}
                             </div>
@@ -3290,7 +3290,7 @@ export default function EmployeePortal() {
                                 }}
                                 className="px-4 py-2 bg-stone-950 hover:bg-stone-850 hover:text-stone-100 text-amber-500 border border-stone-800 hover:border-amber-500/30 text-[10px] uppercase font-bold tracking-widest rounded-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                               >
-                                📁 Open Member Profile
+                                Open Member Profile
                               </button>
 
                               <button
@@ -3340,7 +3340,7 @@ export default function EmployeePortal() {
                                 }}
                                 className="flex-1 px-4 py-2 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-stone-950 font-sans font-black text-[10px] uppercase tracking-widest rounded-sm shadow-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer"
                               >
-                                ✓ Quick Release Allocation & Clear
+                                Quick Release Allocation & Clear
                               </button>
                             </div>
                           )}
@@ -3500,7 +3500,7 @@ export default function EmployeePortal() {
                             Admitting Batch...
                           </>
                         ) : (
-                          <>✓ Auto-Process FCFS Admissions</>
+                          <>Auto-Process FCFS Admissions</>
                         )}
                       </Button>
                     </div>
@@ -3577,7 +3577,7 @@ export default function EmployeePortal() {
                                   <h4 className="font-serif font-bold text-stone-200 text-xs truncate max-w-[150px]">{lead.name}</h4>
                                   {isVip && (
                                     <span className="bg-amber-500 text-stone-950 font-sans font-extrabold text-[8px] px-1 rounded-sm uppercase tracking-wider animate-pulse inline-flex items-center">
-                                      ★ VIP Standby
+                                      VIP Standby
                                     </span>
                                   )}
                                 </div>
@@ -3624,7 +3624,7 @@ export default function EmployeePortal() {
                                     : 'border-stone-800 text-stone-500 hover:border-stone-600 hover:text-stone-300'
                                 }`}
                               >
-                                ★
+                                
                               </button>
 
                               {/* Singly Admit Quick Action */}
@@ -3676,7 +3676,7 @@ export default function EmployeePortal() {
                   onClick={() => setActiveReviewInquiry(null)}
                   className="w-8 h-8 rounded-full bg-stone-950 border border-stone-800 flex items-center justify-center text-stone-400 hover:text-stone-100 hover:border-amber-500/50 cursor-pointer transition-colors text-xs"
                 >
-                  ✕
+                  Dismiss
                 </button>
               </div>
 
@@ -3710,7 +3710,7 @@ export default function EmployeePortal() {
                   </div>
 
                   <div className="bg-emerald-950/20 border border-emerald-900/30 rounded p-2 text-[9px] text-emerald-400 font-sans leading-normal flex items-start gap-1.5">
-                    <span className="text-emerald-500">✓</span>
+                    <span className="text-emerald-500">Active</span>
                     <span>California ABC Database reports this license is in good standing. Eligible for tax-exempt bulk allocations.</span>
                   </div>
                 </div>
@@ -3743,7 +3743,7 @@ export default function EmployeePortal() {
                   </div>
 
                   <div className="bg-emerald-950/20 border border-emerald-900/30 rounded p-2 text-[9px] text-emerald-400 font-sans leading-normal flex items-start gap-1.5">
-                    <span className="text-emerald-500">✓</span>
+                    <span className="text-emerald-500">Active</span>
                     <span>California CDTFA verifies this reseller registration matches active business filings. Excludes local sales tax on freight.</span>
                   </div>
                 </div>
@@ -3870,7 +3870,7 @@ export default function EmployeePortal() {
                       <div className="w-16 h-16 bg-emerald-950/40 border border-emerald-500/60 rounded-full flex items-center justify-center mb-4 text-emerald-400">
                         <Check size={32} className="animate-bounce" />
                       </div>
-                      <h4 className="font-serif text-emerald-400 uppercase tracking-widest text-sm mb-1 font-bold">✓ Approved</h4>
+                      <h4 className="font-serif text-emerald-400 uppercase tracking-widest text-sm mb-1 font-bold">Approved</h4>
                       <span className="text-[9px] text-emerald-500 font-bold uppercase tracking-wider mb-4 border border-emerald-900/40 px-2 py-0.5 rounded bg-emerald-950/20">Stripe Authorization Succeeded</span>
                       <p className="text-[10px] text-stone-400 font-mono leading-relaxed">Finalizing order completion parameters...</p>
                     </div>
@@ -3991,7 +3991,7 @@ export default function EmployeePortal() {
           <div className="flex items-start gap-3">
             <div className="w-9 h-9 rounded-full bg-amber-500 flex items-center justify-center text-stone-950 shrink-0 font-bold text-sm relative">
               <span className="w-full h-full rounded-full bg-amber-500 animate-ping absolute opacity-45"></span>
-              <span>📶</span>
+              
             </div>
 
             <div className="flex-1 space-y-1.5 min-w-0">

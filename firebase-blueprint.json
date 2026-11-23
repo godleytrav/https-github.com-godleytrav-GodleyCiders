@@ -15,17 +15,27 @@
     },
     "WholesaleInquiry": {
       "title": "WholesaleInquiry",
-      "description": "Business inquiring about wholesale allocation",
+      "description": "Wholesale buyer account, lead capture, California compliance documentation, and approval status",
       "type": "object",
       "properties": {
-        "businessName": { "type": "string" },
-        "contactName": { "type": "string" },
-        "email": { "type": "string" },
-        "phone": { "type": "string" },
-        "message": { "type": "string" },
-        "createdAt": { "type": "string", "format": "date-time" }
+        "businessName": { "type": "string", "maxLength": 150 },
+        "contactName": { "type": "string", "maxLength": 120 },
+        "email": { "type": "string", "maxLength": 160 },
+        "phone": { "type": "string", "maxLength": 40 },
+        "type": { "type": "string", "maxLength": 60 },
+        "status": { "enum": ["lead", "pending", "hold", "approved", "rejected"] },
+        "docsSubmitted": { "type": "boolean" },
+        "abcLicenseNumber": { "type": "string", "maxLength": 80 },
+        "resaleLicenseNumber": { "type": "string", "maxLength": 80 },
+        "taxId": { "type": "string", "maxLength": 40 },
+        "address": { "type": "string", "maxLength": 300 },
+        "billingAddress": { "type": "string", "maxLength": 300 },
+        "net30Status": { "enum": ["none", "requested", "approved", "denied"] },
+        "message": { "type": "string", "maxLength": 2000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["businessName", "contactName", "email", "phone", "createdAt"]
+      "required": ["businessName", "contactName", "email", "phone", "status", "createdAt"]
     },
     "Product": {
       "title": "Product",
@@ -67,6 +77,29 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["userId", "items", "totalAmount", "status", "createdAt", "updatedAt"]
+    },
+    "LiveLabel": {
+      "title": "LiveLabel",
+      "description": "AR interactive bottle label configuration with QR code identifier and multimedia assets",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string" },
+        "name": { "type": "string" },
+        "vintage": { "type": "string" },
+        "targetImageUrl": { "type": "string" },
+        "augmentedMediaType": { "enum": ["video", "canvas_effect", "artwork_layer"] },
+        "augmentedMediaUrl": { "type": "string" },
+        "canvasEffectType": { "type": "string" },
+        "audioNarrationUrl": { "type": "string" },
+        "audioTitle": { "type": "string" },
+        "terroirNotes": { "type": "object" },
+        "ctaType": { "type": "string" },
+        "ctaLabel": { "type": "string" },
+        "ctaUrl": { "type": "string" },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["code", "name", "targetImageUrl", "active"]
     }
   },
   "firestore": {
@@ -85,6 +118,10 @@
     "/orders/{orderId}": {
       "schema": { "$ref": "#/entities/Order" },
       "description": "Orders created on the web to be processed by CRM"
+    },
+    "/live_labels/{labelId}": {
+      "schema": { "$ref": "#/entities/LiveLabel" },
+      "description": "Interactive AR bottle label configurations and multimedia targets"
     }
   }
 }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useLocation, Link } from 'react-router-dom';
 import Splash from './pages/Splash';
 import Home from './pages/Home';
 import Club from './pages/Club';
@@ -10,6 +10,8 @@ import Anatomy from './pages/Anatomy';
 import Events from './pages/Events';
 import EmployeePortal from './pages/EmployeePortal';
 import Blog from './pages/Blog';
+import AdminPage from './pages/Admin';
+import LiveLabelPage from './pages/LiveLabel';
 import Navigation from './components/Navigation';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -131,10 +133,14 @@ function MainLayout({ children }: { children: React.ReactNode }) {
             © {new Date().getFullYear()} Godley Ciders
             <button onClick={toggleAdminPanel} className="opacity-0 cursor-pointer w-2 h-2 rounded-full absolute -right-4 focus:opacity-100"></button>
           </p>
-          <div className="flex gap-4 items-center">
-            <button onClick={toggleAdminPanel} className="text-[10px] tracking-widest uppercase hover:text-amber-500 transition-colors">Admin Access</button>
+          <div className="flex flex-wrap gap-4 items-center justify-center">
+            <Link to="/live" className="text-[10px] tracking-widest uppercase text-amber-500/80 hover:text-amber-400 font-semibold transition-colors">Live Label AR</Link>
             <span className="text-stone-800 text-xs">|</span>
-            <a href="/employee" className="text-[10px] tracking-widest uppercase hover:text-amber-500 transition-colors">Shed Terminal</a>
+            <Link to="/admin" className="text-[10px] tracking-widest uppercase hover:text-amber-500 transition-colors">Executive Terminal</Link>
+            <span className="text-stone-800 text-xs">|</span>
+            <button onClick={toggleAdminPanel} className="text-[10px] tracking-widest uppercase hover:text-amber-500 transition-colors cursor-pointer">Quick Settings</button>
+            <span className="text-stone-800 text-xs">|</span>
+            <Link to="/employee" className="text-[10px] tracking-widest uppercase hover:text-amber-500 transition-colors">Shed Terminal</Link>
           </div>
         </footer>
       </div>
@@ -181,6 +187,9 @@ function AnimatedRoutes() {
         <Route path="/events" element={<MainLayout><Events /></MainLayout>} />
         <Route path="/journal" element={<MainLayout><Blog /></MainLayout>} />
         <Route path="/employee" element={<MainLayout><EmployeePortal /></MainLayout>} />
+        <Route path="/admin" element={<AdminPage />} />
+        <Route path="/live" element={<LiveLabelPage />} />
+        <Route path="/live-label" element={<LiveLabelPage />} />
       </Routes>
     </AnimatePresence>
   );

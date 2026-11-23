@@ -30,6 +30,7 @@ export default function Navigation() {
     { name: 'Home', path: '/home' },
     { name: 'Story', path: '/story' },
     { name: 'Shop', path: '/shop' },
+    { name: 'Live Label', path: '/live' },
     { name: 'Events', path: '/events' },
     { name: 'Club Members', path: '/club' },
     { name: 'Wholesale', path: '/wholesale' },

